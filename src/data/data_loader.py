@@ -76,10 +76,42 @@ class DataLoader:
             self.logger.error(f"Error validating DataFrame: {str(e)}")
             return pd.DataFrame(columns=required_cols)
 
-    def split_data(
-        self, df: pd.DataFrame, test_size: float = 0.2
-    ) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        return train_test_split(df, test_size=test_size, random_state=42)
+    def split_data(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        """Enhanced data splitting with better balance and validation"""
+        from sklearn.model_selection import train_test_split
+        
+        try:
+            if 'label' not in df.columns:
+                raise ValueError("No label column found for stratification")
+                
+            # Calculate class distribution
+            class_dist = df['label'].value_counts(normalize=True)
+            self.logger.info(f"Class distribution before split: {class_dist.to_dict()}")
+            
+            # Stratified split maintaining class ratios
+            train_df, test_df = train_test_split(
+                df,
+                test_size=0.3,  # 70-30 split
+                stratify=df['label'],
+                random_state=42,
+                shuffle=True
+            )
+            
+            # Validate split results
+            train_dist = train_df['label'].value_counts(normalize=True)
+            test_dist = test_df['label'].value_counts(normalize=True)
+            
+            self.logger.info(f"Training set size: {len(train_df)} samples")
+            self.logger.info(f"Test set size: {len(test_df)} samples")
+            self.logger.info(f"Training distribution: {train_dist.to_dict()}")
+            self.logger.info(f"Test distribution: {test_dist.to_dict()}")
+            
+            return train_df, test_df
+            
+        except Exception as e:
+            self.logger.error(f"Error in data splitting: {str(e)}")
+            # Return empty frames if split fails
+            return pd.DataFrame(columns=df.columns), pd.DataFrame(columns=df.columns)
 
     def load_processed_data(self, language: str) -> pd.DataFrame:
         file_path = os.path.join(

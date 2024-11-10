@@ -40,6 +40,11 @@ class CommentTemplates:
                     "Giá hơi {price_complaint}, {details}",
                     "Vệ sinh {cleanliness_issue}, {problem}",
                     "Thất vọng về {aspect}, {reason}",
+                    "Đồ ăn {taste_issue} vl, {problem}",
+                    "Quán này {slang_negative} thật, {reason}",
+                    "Giá thì cắt cổ mà đồ ăn {taste_issue} vcl",
+                    "Phục vụ như c*t, {service_issue}",
+                    "Vệ sinh {cleanliness_issue} vl, éo bao giờ quay lại"
                 ],
                 "neutral": [
                     "Đồ ăn {taste} bình thường, {details}",
@@ -280,8 +285,40 @@ class CommentTemplates:
                 "tạm": ["tạm được", "được", "cũng được"],
                 "trung bình": ["không đặc sắc", "không nổi bật"],
                 "thường": ["bình bình", "không có gì đặc biệt"]
+            },
+            "informal_expressions": {
+                "tức giận": ["tức ói", "điên tiết", "tức điên", "tức phát điên", "máu"],
+                "thất vọng": ["chán đời", "nản vl", "chả buồn nói", "phát ngấy"],
+                "phẫn nộ": ["đkm", "má nó", "dcm", "vkl", "ối dồi ôi"],
+                "khen ngợi": ["đỉnh vl", "bá đạo vl", "max ngon", "xịn sò"],
+                "chê bai": ["như c*t", "như sh*t", "như cức", "hãm vl", "tởm"],
+                "bực mình": ["đ*o chịu nổi", "đ*o được", "quá mức chịu đựng"],
+                "bất ngờ": ["đậu má", "vãi cả l*n", "vãi", "vcl"]
             }
         }
+
+        # Add more slang variations to existing categories
+        self.vi_slangs["positive"].update({
+            "xịn": self.vi_slangs["positive"]["xịn"] + ["đỉnh vl", "xịn sò vl"],
+            "ngon": self.vi_slangs["positive"]["ngon"] + ["ngon vl", "đỉnh của chóp vl"],
+            "tốt": self.vi_slangs["positive"]["tốt"] + ["quá mẹ ngon", "đỉnh quá xá"],
+            "thích": self.vi_slangs["positive"]["thích"] + ["phê vl", "sướng phát xỉu"]
+        })
+
+        self.vi_slangs["negative"].update({
+            "tệ": self.vi_slangs["negative"]["tệ"] + ["như c*t", "như sh*t"],
+            "kém": self.vi_slangs["negative"]["kém"] + ["như hạch vl", "dở ẹc"],
+            "đắt": self.vi_slangs["negative"]["đắt"] + ["chém gió vl", "cướp tiền"],
+            "dở": self.vi_slangs["negative"]["dở"] + ["ngu vl", "gà vl"]
+        })
+
+        # Add more internet terms
+        self.vi_slangs["internet_terms"].update({
+            "không": self.vi_slangs["internet_terms"]["không"] + ["éo", "đ*o", "đéo"],
+            "vãi": ["v~", "vl", "vcl", "vloz"],
+            "quá": ["vãi cả l", "vcl", "vl"],
+            "được": ["đc", "dk", "được của l*"]
+        })
 
         # Thêm từ lóng tiếng Anh
         self.en_slangs = {

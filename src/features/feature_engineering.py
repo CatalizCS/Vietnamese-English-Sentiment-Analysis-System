@@ -32,21 +32,21 @@ class FeatureExtractor:
     def _initialize_base_extractors(self):
         """Initialize basic extractors regardless of model existence"""
         self.tfidf = TfidfVectorizer(
-            max_features=min(self.config.MAX_FEATURES, 1000),
-            ngram_range=(1, 2),
-            min_df=1,
-            max_df=1.0,
+            max_features=min(self.config.MAX_FEATURES, 2000),  # Increased features
+            ngram_range=(1, 3),  # Added trigrams
+            min_df=2,  # Increased min_df
+            max_df=0.95,  # Adjusted max_df
             strip_accents="unicode",
             token_pattern=r"(?u)\b\w+\b",
-            lowercase=True,
+            lowercase=True
         )
         
         # Initialize word and character vectorizers
         self.word_vectorizer = TfidfVectorizer(
-            max_features=1000,
-            ngram_range=(1, 2),
-            min_df=1,
-            max_df=1.0,
+            max_features=2000,  # Increased features
+            ngram_range=(1, 3),  # Added trigrams
+            min_df=2,
+            max_df=0.95,
             strip_accents="unicode",
             token_pattern=r"(?u)\b\w+\b",
             lowercase=True
@@ -247,7 +247,7 @@ class FeatureExtractor:
         return np.hstack([svd_features, stat_features])
 
     def _extract_statistical_features(self, texts):
-        """Enhanced statistical features for better accuracy"""
+        """Enhanced statistical features for better sentiment detection"""
         features = []
         for text in texts:
             text = str(text)
@@ -279,6 +279,21 @@ class FeatureExtractor:
             positive_words = len([w for w in words if w in self.positive_words])
             negative_words = len([w for w in words if w in self.negative_words])
             
+            # Additional sentiment-specific features
+            exclamation_sequences = len(re.findall(r'!+', text))
+            question_sequences = len(re.findall(r'\?+', text))
+            uppercase_words = sum(1 for word in words if word.isupper())
+            word_count = len(words)
+            
+            # Emotional pattern features
+            positive_emoticons = len(re.findall(r'[:;]-?[\)pP]', text))
+            negative_emoticons = len(re.findall(r'[:;]-?[\(]', text))
+            emoji_pattern = len(re.findall(r'[\U0001F600-\U0001F64F]', text))
+            
+            # Sentiment word ratios
+            positive_ratio = sum(1 for word in words if word in self.positive_words) / max(word_count, 1)
+            negative_ratio = sum(1 for word in words if word in self.negative_words) / max(word_count, 1)
+            
             features.append([
                 length,
                 word_count,
@@ -295,7 +310,15 @@ class FeatureExtractor:
                 caps_word_count / max(len(words), 1),
                 word_length_variance,
                 positive_words / max(len(words), 1),
-                negative_words / max(len(words), 1)
+                negative_words / max(len(words), 1),
+                exclamation_sequences,
+                question_sequences,
+                uppercase_words / max(word_count, 1),
+                positive_emoticons,
+                negative_emoticons,
+                emoji_pattern,
+                positive_ratio,
+                negative_ratio,
             ])
 
         return np.array(features, dtype=np.float32)

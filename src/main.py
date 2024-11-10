@@ -1,4 +1,5 @@
 import argparse
+from matplotlib import pyplot as plt
 import pandas as pd
 import os
 import sys
@@ -37,26 +38,38 @@ def train(language: str, config: Config):
     logger.info(f"Starting training for {language} language")
     
     try:
-        # Initialize components
+        # Initialize components with proper error handling
         data_loader = DataLoader(config)
         preprocessor = DataPreprocessor(language, config)
-        feature_extractor = FeatureExtractor(language, config)
+        feature_extractor = None
+        
+        try:
+            feature_extractor = FeatureExtractor(language, config)
+            if feature_extractor is None:
+                raise ValueError("Failed to initialize feature extractor")
+        except Exception as fe:
+            logger.error(f"Feature extractor initialization failed: {str(fe)}")
+            raise
+            
         model_trainer = EnhancedModelTrainer(language, config)
-        model_trainer.feature_extractor = feature_extractor  # Share feature extractor
+        if feature_extractor:
+            model_trainer.feature_extractor = feature_extractor
 
-        # Load and validate data
+        # Load and validate data with error checks
         df = data_loader.load_data(language)
-        if df.empty:
+        if df is None or df.empty:
             raise ValueError("No data loaded")
             
         processed_df = preprocessor.preprocess(df)
-        if processed_df.empty:
+        if processed_df is None or processed_df.empty:
             raise ValueError("No valid samples after preprocessing")
             
-        # Split and extract features
+        # Split and extract features with validation
         train_df, test_df = data_loader.split_data(processed_df)
+        if train_df.empty or test_df.empty:
+            raise ValueError("Error in train-test split")
+            
         X_train, y_train = data_loader.get_features_and_labels(train_df)
-        
         if len(X_train) == 0 or len(y_train) == 0:
             raise ValueError("No training samples available")
             
@@ -65,7 +78,7 @@ def train(language: str, config: Config):
 
         # Train model
         model = model_trainer.train_with_grid_search(X_train, y_train)
-        # ...rest of existing code...
+    
         
         # Calculate training time
         training_time = (datetime.now() - start_time).total_seconds()
@@ -249,6 +262,130 @@ def restore_model(language: str, config: Config):
         logger.error(f"Error restoring model: {str(e)}")
         return None
 
+def display_metrics(language: str, config: Config):
+    """Display current model metrics and performance visualization"""
+    logger = Logger(__name__).logger
+    model_path = os.path.join(config.DATA_DIR, "models", f"{language}_sentiment_model.pkl")
+    metrics_img_path = os.path.join(config.DATA_DIR, "metrics", f"{language}_model_metrics.png")
+    os.makedirs(os.path.dirname(metrics_img_path), exist_ok=True)
+    
+    try:
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"No model found for {language}")
+            
+        # Load model info
+        model_info = joblib.load(model_path)
+        print("\nModel Info Structure:", model_info.keys())  # Debug info
+        
+        # Print basic info
+        print("\n=== Model Performance Metrics ===")
+        print(f"Language: {language.upper()}")
+        print(f"Timestamp: {model_info.get('config', {}).get('timestamp', 'N/A')}")
+        
+        # Extract metrics with proper validation
+        if 'metrics' not in model_info:
+            print("No metrics found in model_info")
+            print("Available keys:", model_info.keys())
+            raise ValueError("No metrics found in model")
+            
+        metrics = model_info['metrics']
+        print("\nMetrics Structure:", metrics.keys())  # Debug info
+        
+        # Extract scores and times
+        scores = []
+        times = []
+        model_names = []
+        
+        if isinstance(metrics, dict):
+            model_data = metrics.get('models', {})
+            if not model_data:
+                model_data = {'base_model': metrics}
+                
+            print("\nProcessing models:", list(model_data.keys()))  # Debug info
+            
+            for model_name, model_metrics in model_data.items():
+                if isinstance(model_metrics, dict):
+                    # Try to get score from various possible keys
+                    score = None
+                    for score_key in ['best_score', 'test_score', 'f1_score', 'accuracy']:
+                        if score_key in model_metrics:
+                            score = float(model_metrics[score_key])
+                            break
+                    
+                    time = float(model_metrics.get('training_time', 0))
+                    
+                    if score is not None:
+                        scores.append(score)
+                        times.append(time)
+                        model_names.append(model_name)
+                        
+                        # Print detailed metrics
+                        print(f"\n{model_name.upper()} Model:")
+                        print(f"Score: {score:.4f}")
+                        print(f"Training Time: {time:.2f}s")
+                        
+                        if 'parameters' in model_metrics:
+                            print("Parameters:")
+                            for param, value in model_metrics['parameters'].items():
+                                print(f"  {param}: {value}")
+
+        if not scores:
+            print("\nNo scores found in metrics structure:")
+            print("Model data:", model_data)  # Debug info
+            raise ValueError("No valid scores found in metrics")
+
+        # Rest of the visualization code...
+        plt.figure(figsize=(15, 8))
+        
+        # Score comparison plot
+        plt.subplot(1, 2, 1)
+        bars = plt.bar(range(len(scores)), scores, color=['blue', 'green', 'red'])
+        plt.xticks(range(len(model_names)), model_names, rotation=45)
+        plt.title(f'Model Performance Comparison\n{language.upper()}')
+        plt.xlabel('Models')
+        plt.ylabel('Score')
+        plt.ylim(0, 1)
+
+        # Add score labels
+        for bar, score in zip(bars, scores):
+            plt.text(
+                bar.get_x() + bar.get_width()/2,
+                score + 0.01,
+                f'{score:.3f}',
+                ha='center'
+            )
+
+        # Time comparison plot
+        if any(times):
+            plt.subplot(1, 2, 2)
+            bars = plt.bar(range(len(times)), times, color=['lightblue', 'lightgreen', 'pink'])
+            plt.xticks(range(len(model_names)), model_names, rotation=45)
+            plt.title('Training Time Comparison')
+            plt.xlabel('Models')
+            plt.ylabel('Time (seconds)')
+
+            # Add time labels
+            for bar, time in zip(bars, times):
+                plt.text(
+                    bar.get_x() + bar.get_width()/2,
+                    time + max(times) * 0.02,
+                    f'{time:.1f}s',
+                    ha='center'
+                )
+
+        plt.tight_layout()
+        plt.savefig(metrics_img_path, dpi=300, bbox_inches='tight')
+        plt.show()
+        
+        print(f"\nMetrics visualization saved to: {metrics_img_path}")
+            
+    except Exception as e:
+        logger.error(f"Error displaying metrics: {str(e)}")
+        print(f"Error: Could not display metrics: {str(e)}")
+        import traceback
+        print("\nFull error traceback:")
+        print(traceback.format_exc())
+
 def main():
     menu = TerminalMenu()
     config = Config()
@@ -267,7 +404,6 @@ def main():
                 menu.display_progress("Training new model")
                 train(language, config)
                 menu.display_result(True, "Model training completed successfully")
-
             elif choice == '2':
                 input_file = menu.get_file_path("input")
                 output_file = menu.get_file_path("output")
@@ -295,10 +431,8 @@ def main():
 
             elif choice == '5':
                 menu.display_progress("Loading model metrics")
-                # Add your display_metrics function call here
-                evaluator = ModelEvaluator(language)
-                # Display metrics logic here
-                
+                display_metrics(language, config)
+
             elif choice == '6':  # Add new test option
                 menu.display_progress("Loading model for testing")
                 test_model(language, config)
