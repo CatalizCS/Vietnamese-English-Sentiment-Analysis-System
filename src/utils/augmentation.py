@@ -327,39 +327,31 @@ class TextAugmenter:
 
         return filled_comment
 
-    def generate_topic_comments(
-        self, topic: str, count: int = 10, language: str = "vi"
-    ) -> list:
-        """Generate multiple comments for a specific topic with more randomization"""
+    def generate_topic_comment(self, topic: str, sentiment: str, language: str = 'vi') -> str:
+        """Generate a comment for a specific topic and sentiment"""
+        if not topic.endswith('_review'):
+            topic = f"{topic}_review"
+            
+        return self.generate_realistic_comment(topic, sentiment, language)
+
+    def generate_topic_comments(self, topic: str, count: int = 10, language: str = 'vi', sentiment: int = None) -> list:
+        """Generate comments for a specific topic with optional sentiment"""
         comments = []
-        sentiments = ["positive", "negative", "neutral"]
+        sentiment_map = {0: 'negative', 1: 'neutral', 2: 'positive'}
         
-        # Randomize sentiment distribution based on topic
-        if topic == "product_review":
-            weights = [0.45, 0.25, 0.3]  # More positive reviews for products
-        elif topic == "service_review":
-            weights = [0.35, 0.35, 0.3]  # Balanced for services
-        elif topic == "food_review":
-            weights = [0.5, 0.2, 0.3]  # Very positive for food
-        else:
-            weights = [0.4, 0.3, 0.3]  # Default distribution
-            
         for _ in range(count):
-            # Randomly choose sentiment with weights
-            sentiment = random.choices(sentiments, weights=weights)[0]
-            
-            # Generate comment with extra randomization
-            comment = self.generate_realistic_comment(topic, sentiment, language)
-            
-            # Random chance to add additional features
-            if random.random() < 0.2:
-                comment = f"{comment} #review#{topic}"  # Add hashtags
+            # If sentiment is provided, use it, otherwise randomly choose
+            if sentiment is not None:
+                sent = sentiment_map[sentiment]
+            else:
+                sent = random.choice(['negative', 'neutral', 'positive'])
+                
+            text = self.generate_topic_comment(topic, sent, language)
+            label = {'negative': 0, 'neutral': 1, 'positive': 2}[sent]
             
             comments.append({
-                "text": comment,
-                "label": {"positive": 2, "neutral": 1, "negative": 0}[sentiment]
+                'text': text,
+                'label': label
             })
             
-        # Shuffle the order of comments
-        random.shuffle(comments)
         return comments

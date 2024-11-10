@@ -137,9 +137,9 @@ class TerminalMenu:
                     default=1000,
                     show_default=True
                 )
-                if 100 <= count <= 10000:
+                if 100 <= count <= 50000:
                     return count
-                self.console.print("[red]Please enter a number between 100 and 10000[/red]")
+                self.console.print("[red]Please enter a number between 100 and 50000[/red]")
             except ValueError:
                 self.console.print("[red]Please enter a valid number[/red]")
 
