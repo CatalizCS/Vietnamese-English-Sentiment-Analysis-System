@@ -141,8 +141,87 @@ class CommentTemplates:
                     "Shipping was {delivery_issue}, {problem}",
                     "Not worth the money, {reason}",
                 ],
+                "neutral": [
+                    "Product is okay, {details}",
+                    "Decent but {suggestion}",
+                    "Nothing special, {reason}",
+                    "Usable product, {opinion}",
+                    "Fairly standard, {details}"
+                ]
             }
         }
+
+        self.en_templates.update({
+            "food_review": {
+                "positive": [
+                    "Food is {taste}, {details}",
+                    "Service is {service_quality}, {atmosphere}",
+                    "Quality is {quality}, {reason}",
+                    "Great value for {price_opinion}, {value}",
+                    "Ambiance is {atmosphere}, {recommendation}"
+                ],
+                "negative": [
+                    "Food was {taste_issue}, {reason}",
+                    "Poor service: {service_issue}, {problem}",
+                    "Overpriced: {price_complaint}, {details}",
+                    "Hygiene issues: {cleanliness_issue}, {problem}",
+                    "Disappointed with {aspect}, {reason}"
+                ],
+                "neutral": [
+                    "The food is average, {details}",
+                    "Price is reasonable, {value}",
+                    "Service is decent, {details}",
+                    "Ambiance is okay but {suggestion}",
+                    "Standard quality, {opinion}"
+                ]
+            },
+            "movie_review": {
+                "positive": [
+                    "Great movie, {reason}",
+                    "Actors were {acting}, script was {script}",
+                    "Plot was {plot_opinion}, {details}",
+                    "Felt {emotion} watching it, {reason}",
+                    "Worth watching, {recommendation}"
+                ],
+                "negative": [
+                    "Boring movie, {reason}",
+                    "Actors were {acting_issue}, {problem}",
+                    "Script was {script_issue}, {details}",
+                    "Disappointed with {aspect}, {reason}",
+                    "Not worth the ticket price, {details}"
+                ],
+                "neutral": [
+                    "Movie is alright, {reason}",
+                    "Acting is decent, script is {script}",
+                    "Plot is {plot_opinion}, {details}",
+                    "It's watchable, {opinion}",
+                    "Neither great nor terrible, {details}"
+                ]
+            },
+            "service_review": {
+                "positive": [
+                    "Staff were {staff_quality} and {staff_attitude}",
+                    "Service was {service_quality}, {recommendation}",
+                    "Had {good_point} and {another_point}",
+                    "Very {emotion} with {aspect}, {reason}",
+                    "{service_type} here is {quality}, {details}"
+                ],
+                "negative": [
+                    "Staff attitude was {bad_attitude}, {issue}",
+                    "Service was {service_issue}, {problem}",
+                    "Not satisfied with {aspect}, {reason}",
+                    "Disappointed with {issue_point}, {details}",
+                    "{service_type} was too {negative_point}, {complaint}"
+                ],
+                "neutral": [
+                    "Service was okay, {details}",
+                    "Decent but {suggestion}",
+                    "{aspect} could be improved, {feedback}",
+                    "Nothing remarkable, {reason}",
+                    "Standard service, {opinion}"
+                ]
+            }
+        })
 
         self.vi_fillers = {
             "quality": ["tốt", "xuất sắc", "tuyệt vời", "đỉnh", "chất lượng"],
@@ -219,10 +298,81 @@ class CommentTemplates:
             ]
         }
 
+        self.vi_fillers.update({
+            "quality": [
+                "tốt", "xuất sắc", "tuyệt vời", "đỉnh", "chất lượng",
+                "xịn xò", "đáng đồng tiền", "ưng cái bụng", "ngon lành", 
+                "không phải dạng vừa đâu"
+            ],
+            "emotion": [
+                "hài lòng", "thích", "ưng", "mê", "yêu",
+                "phê quá trời", "sướng rớt nước miếng", "đê mê", 
+                "mê tít thò lò", "phải lòng ngay cái nhìn đầu tiên"
+            ],
+        })
+
+        self.en_fillers = {
+            "quality": ["good", "excellent", "amazing", "great", "outstanding"],
+            "emotion": ["happy", "satisfied", "pleased", "delighted", "impressed"],
+            "packaging": ["careful", "secure", "nice", "neat", "professional"],
+            "delivery": ["fast", "on-time", "efficient", "professional", "prompt"],
+            "price_opinion": ["reasonable", "affordable", "fair", "good value"],
+            "value_desc": ["worth the money", "great value", "excellent deal"],
+            "reason": ["really love the quality", "exceeds expectations", "exactly what I needed"],
+            "issue": ["not up to standard", "below expectations", "poor quality"],
+            "problem": ["constant issues", "major flaws", "serious problems"],
+            "details": ["highly recommend", "would buy again", "excellent purchase"],
+            "suggestion": ["could be improved", "needs work", "should be better"],
+            "recommendation": ["definitely recommend", "worth trying", "must buy"],
+            "quality_issue": ["poor", "substandard", "disappointing", "terrible"],
+            "delivery_issue": ["delayed", "late", "unprofessional", "problematic"],
+            "aspect": ["quality", "design", "functionality", "performance", "features"],
+            "neutral_opinion": [
+                "decent", "average", "okay", "standard",
+                "fair", "moderate", "acceptable", "passable"
+            ],
+            "neutral_suggestion": [
+                "could be improved",
+                "needs some work",
+                "has room for improvement",
+                "could be better"
+            ],
+            "neutral_quality": [
+                "average quality",
+                "acceptable standard",
+                "middle-ground",
+                "fair enough"
+            ],
+            "neutral_response": [
+                "mixed feelings",
+                "balanced view",
+                "moderate opinion",
+                "neutral stance"
+            ]
+        }
+
+        missing_en_fillers = {
+            "taste": ["delicious", "amazing", "excellent", "flavorful", "tasty"],
+            "service": ["attentive", "professional", "friendly", "efficient"],
+            "atmosphere": ["cozy", "elegant", "comfortable", "pleasant"],
+            "staff_quality": ["well-trained", "experienced", "professional", "skilled"],
+            "staff_attitude": ["friendly", "helpful", "courteous", "welcoming"],
+            # ...add other missing categories
+        }
+        
+        self.en_fillers.update(missing_en_fillers)
+
         self.vi_aspects = {
             "product": ["chất lượng", "mẫu mã", "đóng gói", "giao hàng", "giá cả"],
             "food": ["hương vị", "phục vụ", "không gian", "giá cả", "vệ sinh"],
             "movie": ["nội dung", "diễn xuất", "kịch bản", "âm thanh", "hình ảnh"],
+        }
+
+        self.en_aspects = {
+            "product": ["quality", "design", "packaging", "shipping", "price"],
+            "food": ["taste", "service", "ambiance", "pricing", "cleanliness"],
+            "movie": ["content", "acting", "script", "sound", "visuals"],
+            "service": ["staff", "efficiency", "value", "facilities", "experience"]
         }
 
         self.vi_expressions = {
@@ -375,6 +525,350 @@ class CommentTemplates:
             ],
         }
 
+        # Thêm từ điển emoji phù hợp với cảm xúc
+        self.emojis = {
+            "positive": ["😊", "🥰", "😍", "🤩", "👍", "💯", "🔥", "✨", "💪", "����"],
+            "negative": ["😤", "😒", "😑", "👎", "😠", "😡", "🤬", "💢", "😫", "😩"],
+            "neutral": ["🤔", "😐", "😶", "🤷", "😕", "😌", "🙂", "👀"]
+        }
+
+        # Thêm các cách diễn đạt tự nhiên
+        self.natural_expressions = {
+            "opening": [
+                "Thật sự thì", "Nói thật là", "Theo mình thấy thì", 
+                "Mình đánh giá là", "Cá nhân mình thấy",
+                "Xin chia sẻ chút là", "Mình mới dùng thử và thấy",
+                "Sau thời gian trải nghiệm thì"
+            ],
+            "closing": [
+                "Đó là góc nhìn của mình ạ", "Mọi người thấy sao?",
+                "Đánh giá chủ quan thôi nha", "Hy vọng review có ích",
+                "Mình nghĩ vậy thôi", "Mọi người cân nhắc nha"
+            ]
+        }
+
+        # Thêm mẫu câu ngắn
+        self.short_templates = {
+            "positive": [
+                "Tuyệt vời 👍",
+                "Quá ngon luôn",
+                "Đỉnh thật sự",
+                "Rất ưng ý",
+                "Xứng đáng {score}/10",
+                "Không có gì để chê",
+                "Sẽ quay lại lần sau",
+                "Recommend nha mọi người"
+            ],
+            "negative": [
+                "Thất vọng quá",
+                "Không đáng tiền",
+                "Chán thật sự",
+                "Tệ hết chỗ nói",
+                "Không bao giờ quay lại",
+                "Phí tiền",
+                "Quá tệ {score}/10",
+                "Không nên mua"
+            ],
+            "neutral": [
+                "Tạm được",
+                "Bình thường",
+                "Cũng được",
+                "Không có gì đặc biệt",
+                "Tương đối ổn",
+                "{score}/10 thôi",
+                "Còn cải thiện được"
+            ]
+        }
+
+        # Thêm mẫu câu dài, chi tiết
+        self.long_templates = {
+            "positive": [
+                "Đây là lần thứ {count} mình {action} và vẫn rất {emotion}. {aspect} thì {quality}, đặc biệt là {highlight}. {recommendation}",
+                "Thực sự {emotion} khi {action}. {details} Về {aspect} thì {quality}, còn {another_aspect} cũng {another_quality}. {conclusion}",
+                "Mình đã {action} được {duration} rồi và phải nói là {quality}. {reason} Ngoài ra {additional_point}. {suggestion}",
+                "Trải nghiệm {duration} với {product/service} này thì thấy {overall_feeling}. {aspect} thì {quality}, {another_aspect} thì {another_quality}. {detailed_review} {final_thought}"
+            ],
+            "negative": [
+                "Thất vọng tột độ với {aspect}. {issue_details} Không những thế, {another_issue}. {complaint_details} Mình đã liên hệ {support_channel} nhưng {service_issue}. {conclusion}",
+                "Đây là trải nghiệm tệ nhất từ trước đến nay với {product/service}. {main_issue} Thêm vào đó, {additional_issues}. {negative_impact} {warning}",
+                "Mình đã cho cơ hội {count} lần nhưng {recurring_issue}. {details} Về {aspect} thì {quality_issue}, {service_complaint}. {final_warning}"
+            ],
+            "neutral": [
+                "Sau {duration} sử dụng thì thấy {product/service} này {neutral_opinion}. {positive_points} nhưng {negative_points}. {improvement_suggestions}",
+                "Không quá tệ nhưng cũng không xuất sắc. {aspect} thì {neutral_quality}, còn {another_aspect} thì {areas_for_improvement}. {balanced_conclusion}",
+                "Mình thấy {product/service} này còn nhiều điểm cần cải thiện. {details} Tuy nhiên cũng có {positive_aspects}. {suggestions}"
+            ]
+        }
+
+        # Thêm từ điển điểm số và thời lượng
+        self.scores = {
+            "positive": ["9", "9.5", "10", "8.5"],
+            "negative": ["2", "3", "4", "1"],
+            "neutral": ["5", "6", "7", "6.5"]
+        }
+        
+        self.durations = [
+            "một thời gian", "mấy tháng", "gần năm", 
+            "một tuần", "vài ngày", "khá lâu",
+            "hơn {number} tháng", "gần {number} năm",
+            "được {number} lần"
+        ]
+
+        self.numbers = ["1", "2", "3", "4", "5", "nhiều"]
+
+        self.en_ratings = {
+            "positive": [
+                "{score}/10 would recommend",
+                "Solid {score}/10",
+                "A strong {score} out of 10",
+                "Definitely {score}/10"
+            ],
+            "negative": [
+                "Unfortunately {score}/10",
+                "Disappointing {score}/10",
+                "A weak {score}/10",
+                "Only {score}/10"
+            ],
+            "neutral": [
+                "Average {score}/10",
+                "Middle-of-the-road {score}/10",
+                "Fair {score}/10",
+                "Decent {score}/10"
+            ]
+        }
+
+        self.en_durations = [
+            "for a while", "for months", "nearly a year",
+            "for a week", "several days", "quite some time",
+            "over {number} months", "almost {number} years",
+            "{number} times"
+        ]
+
+        # Add English expressions
+        self.en_expressions = {
+            "positive": [
+                "absolutely fantastic",
+                "really amazing",
+                "nothing to complain about",
+                "exceeded expectations",
+                "extremely satisfied",
+                "outstanding",
+                "top notch",
+                "brilliant"
+            ],
+            "negative": [
+                "very disappointing",
+                "really frustrating",
+                "not worth the money",
+                "terrible experience",
+                "completely unacceptable",
+                "worst ever",
+                "absolute garbage"
+            ],
+            "neutral": [
+                "fairly decent",
+                "nothing special",
+                "average",
+                "okay",
+                "relatively fine",
+                "mediocre",
+                "standard"
+            ]
+        }
+
+        # Add English natural expressions
+        self.en_natural_expressions = {
+            "opening": [
+                "To be honest,",
+                "In my experience,",
+                "From my perspective,",
+                "After trying this,",
+                "I have to say,",
+                "Let me share that",
+                "Based on my usage,",
+                "After some time with this,"
+            ],
+            "closing": [
+                "That's my take on it.",
+                "What do you think?",
+                "Just my personal opinion.",
+                "Hope this helps!",
+                "That's my perspective.",
+                "Consider it before buying."
+            ]
+        }
+
+        # Thêm mẫu bình luận tương tác
+        self.interaction_templates = {
+            "argument": {
+                "aggressive": [
+                    "Đ* biết gì mà {action}? {insult}",
+                    "Ngu như {insult} mà cũng {action}",
+                    "M là thằng {insult} à? Sao {action} v?",
+                    "Làm như hay lắm í, {insult}",
+                    "Ăn nói như {insult}, blocked!",
+                ],
+                "defensive": [
+                    "Ai cho {subject} {action}? {counter_argument}",
+                    "Mắc gì phải nghe {subject}? {dismissal}",
+                    "Kệ tao, liên quan gì đến {subject}?",
+                    "Đừng có mà {action}, {warning}",
+                    "Nói nữa là {threat} đấy!",
+                ],
+                "dismissive": [
+                    "Kệ người ta đi {subject} ơi",
+                    "Thôi {subject} ạ, chả ai quan tâm đâu",
+                    "Đ* ai thèm để ý {subject} nói gì",
+                    "Lạ nhỉ? Ai hỏi {subject} không?",
+                    "Không ai cần ý kiến của {subject} đâu",
+                ]
+            },
+            "support": {
+                "agreement": [
+                    "+1 với {subject}, {reason}",
+                    "Đồng ý với {subject} luôn, {explanation}",
+                    "Chuẩn đấy {subject} ơi! {detail}",
+                    "Như {subject} nói là đúng rồi",
+                    "{subject} nói chuẩn quá! {agreement}"
+                ],
+                "praise": [
+                    "Review hay quá {subject} ơi! {appreciation}",
+                    "Tks {subject} đã chia sẻ nha! {gratitude}",
+                    "Bài viết chất lượng {subject} ạ",
+                    "Góp ý có tâm quá {subject}",
+                    "Respect {subject}! {reason}"
+                ]
+            },
+            "trolling": [
+                "Ơ thế {subject} định nói gì? 🤡",
+                "Nghe {subject} nói mà tức cười quá 😂",
+                "Thím {subject} lại nổi hứng rồi",
+                "Cao thủ {subject} lại xuất hiện kìa ae 🤣",
+                "Đọc mà xỉu với {subject} luôn"
+            ]
+        }
+
+        # Thêm từ vựng cho bình luận tương tác
+        self.interaction_fillers = {
+            "insult": [
+                "ngu như bò", "óc chó", "đầu đất", "thiểu năng", 
+                "ăn c*t", "ngu l*n", "mặt người óc lợn",
+                "đần độn", "ngu si", "ngáo đá"
+            ],
+            "action": [
+                "bô bô cái mồm", "phát biểu", "lên mặt dạy đời",
+                "sủa", "gâu gâu", "hùa theo", "nói năng lung tung",
+                "xàm xí", "thể hiện", "xen vào"
+            ],
+            "subject": [
+                "bạn", "thím", "bác", "chế", "đồng chí",
+                "cụ", "anh", "chị", "bợn", "đại ca"
+            ],
+            "threat": [
+                "ăn block", "báo admin", "cho lên thớt",
+                "cho ra đảo", "tay không bắt giặc", 
+                "xử đẹp", "đập phát chết luôn"
+            ],
+            "counter_argument": [
+                "nói cho biết nha", "nhớ đấy nhá",
+                "cãi là ăn ban", "đừng có mà ngồi mơ",
+                "tự soi gương đi"
+            ],
+            "dismissal": [
+                "lo chuyện của mình đi", "đi ngủ sớm đi",
+                "về mà hỏi google", "dứt ra cho nước nó trong",
+                "lượn đi cho nước nó trong"
+            ],
+            "warning": [
+                "đừng để tôi nóng", "cẩn thận cái mồm",
+                "liệu mà giữ mồm", "coi chừng tay tôi",
+                "cẩn thận kẻo đấm nhau"
+            ],
+            "appreciation": [
+                "review có tâm quá", "chia sẻ xịn xò",
+                "góp ý quá chuẩn", "phân tích rất hay",
+                "đánh giá rất khách quan"
+            ]
+        }
+
+        clean_vi_interaction = {
+            "insult": [
+                "không hiểu gì", "thiếu hiểu biết", "kém cỏi",
+                "không có kiến thức", "thiếu kinh nghiệm"
+            ],
+            "action": [
+                "lên tiếng", "phát biểu", "góp ý",
+                "bình luận", "đánh giá", "phê bình"
+            ],
+            "warning": [
+                "cẩn thận lời nói", "giữ ý một chút",
+                "suy nghĩ kỹ hơn", "điều chỉnh cách nói",
+                "xem lại cách ứng xử"
+            ]
+        }
+        
+        # Replace offensive terms with clean ones
+        self.interaction_fillers.update(clean_vi_interaction)
+
+        # Add English interaction templates
+        self.en_interaction_templates = {
+            "argument": {
+                "aggressive": [
+                    "What do you know about {action}?",
+                    "You clearly don't understand {topic}",
+                    "Stop talking nonsense about {topic}",
+                    "Your opinion is totally wrong",
+                    "You have no idea what you're saying"
+                ],
+                "defensive": [
+                    "Who asked for your opinion?",
+                    "Mind your own business",
+                    "Whatever, I don't care what you think",
+                    "Don't tell me what to do",
+                    "You should know better"
+                ],
+                "dismissive": [
+                    "Just ignore them",
+                    "Nobody cares about that opinion",
+                    "Why even bother responding?",
+                    "Not worth discussing",
+                    "Let's move on from this"
+                ]
+            },
+            "support": {
+                "agreement": [
+                    "Totally agree with you about {topic}!",
+                    "You're absolutely right, {reason}",
+                    "Couldn't agree more! {detail}",
+                    "That's exactly what I think",
+                    "Well said! {agreement}"
+                ],
+                "praise": [
+                    "Great review! {appreciation}",
+                    "Thanks for sharing! {gratitude}",
+                    "Very helpful review",
+                    "Excellent feedback",
+                    "Really appreciate your insights!"
+                ]
+            },
+            "neutral": {
+                "balanced": [
+                    "I see both sides here, {topic}",
+                    "There are pros and cons, {details}",
+                    "It's not that simple, {explanation}",
+                    "Let's be objective about {topic}",
+                    "Consider both perspectives on {subject}"
+                ],
+                "moderate": [
+                    "Maybe we should wait and see",
+                    "Not jumping to conclusions about {topic}",
+                    "Need more information about {subject}",
+                    "Taking a balanced view on this",
+                    "Looking at it objectively"
+                ]
+            }
+        }
+
     def get_random_slang(
         self, sentiment: str, category: str, language: str = "vi"
     ) -> str:
@@ -397,3 +891,92 @@ class CommentTemplates:
         if word.lower() in slang_dict["internet_terms"]:
             return random.choice(slang_dict["internet_terms"][word.lower()])
         return word
+
+    def get_random_duration(self):
+        """Get random duration with optional number"""
+        duration = random.choice(self.durations)
+        if "{number}" in duration:
+            duration = duration.replace("{number}", random.choice(self.numbers))
+        return duration
+
+    def get_random_score(self, sentiment):
+        """Get appropriate score based on sentiment"""
+        return random.choice(self.scores[sentiment])
+
+    def generate_varied_length_comment(self, sentiment, topic):
+        """Generate comment with varied length"""
+        if random.random() < 0.3:  # 30% chance for short comment
+            template = random.choice(self.short_templates[sentiment])
+            if "{score}" in template:
+                template = template.replace("{score}", self.get_random_score(sentiment))
+            return template
+        elif random.random() < 0.7:  # 40% chance for normal comment
+            return self.generate_normal_comment(sentiment, topic)
+        else:  # 30% chance for long comment
+            template = random.choice(self.long_templates[sentiment])
+            return self.fill_long_template(template, sentiment, topic)
+
+    def fill_long_template(self, template, sentiment, topic):
+        """Fill in the placeholders for long templates with appropriate content"""
+        replacements = {
+            "{count}": random.choice(self.numbers),
+            "{duration}": self.get_random_duration(),
+            "{action}": self.get_random_action(topic),
+            "{emotion}": self.get_random_emotion(sentiment),
+        }
+        
+        for key, value in replacements.items():
+            if key in template:
+                template = template.replace(key, value)
+        return template
+
+    def get_random_action(self, topic: str, language: str = "vi") -> str:
+        """Get random action based on topic and language"""
+        actions = {
+            "vi": {
+                "general": ["dùng", "sử dụng", "trải nghiệm", "mua"],
+                "food": ["ăn", "thử", "ghé quán", "đặt đồ"],
+                "movie": ["xem", "ra rạp xem", "thưởng thức"],
+                "service": ["sử dụng dịch vụ", "trải nghiệm", "thuê"]
+            },
+            "en": {
+                "general": ["used", "tried", "experienced", "purchased"],
+                "food": ["ate at", "tried", "visited", "ordered from"],
+                "movie": ["watched", "saw", "experienced"],
+                "service": ["used the service", "experienced", "hired"]
+            }
+        }
+        
+        topic_actions = actions[language].get(topic, actions[language]["general"])
+        return random.choice(topic_actions)
+
+    def get_random_emotion(self, sentiment: str, language: str = "vi") -> str:
+        """Get random emotion based on sentiment and language"""
+        emotions = {
+            "vi": {
+                "positive": self.vi_fillers["emotion"],
+                "negative": ["thất vọng", "buồn", "không hài lòng", "bực mình"],
+                "neutral": ["bình thường", "tạm được", "không đặc biệt"]
+            },
+            "en": {
+                "positive": self.en_fillers["emotion"],
+                "negative": ["disappointed", "upset", "dissatisfied", "frustrated"],
+                "neutral": ["okay", "alright", "not special", "decent"]
+            }
+        }
+        
+        return random.choice(emotions[language][sentiment])
+
+    def generate_interaction_comment(self, interaction_type: str, sub_type: str = None) -> str:
+        """Generate an interaction comment"""
+        if sub_type:
+            template = random.choice(self.interaction_templates[interaction_type][sub_type])
+        else:
+            template = random.choice(self.interaction_templates[interaction_type])
+
+        # Fill template with random fillers
+        for key, values in self.interaction_fillers.items():
+            if "{" + key + "}" in template:
+                template = template.replace("{" + key + "}", random.choice(values))
+
+        return template
