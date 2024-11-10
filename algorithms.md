@@ -1,140 +1,311 @@
-# Machine Learning Algorithms Used in Sentiment Analysis Project
+# Tổng Quan Thuật Toán Machine Learning
 
-## 1. Text Feature Extraction
+## 1. Thuật Toán Trích Xuất Đặc Trưng
 
 ### 1.1 TF-IDF (Term Frequency-Inverse Document Frequency)
 
-- **Purpose**: Chuyển đổi văn bản thành vector số học
-- **How it works**:
-  - Term Frequency (TF): Đếm số lần xuất hiện của từng từ trong văn bản
-  - Inverse Document Frequency (IDF): Đánh giá tầm quan trọng của từ trong toàn bộ corpus
-  - Final Score = TF \* IDF
-- **Implementation**:
-  ```python
-  TfidfVectorizer(
-          max_features=5000,
-          ngram_range=(1, 2),
-          min_df=2,
-          max_df=0.95
-  )
+- **Mục đích**: Chuyển đổi văn bản thành vector số dựa trên tần suất từ
+- **Công thức**:
+
+  ```markdown
+  TF(t,d) = số lần từ t xuất hiện trong văn bản d
+  IDF(t) = log(N/DF(t))
   ```
 
-### 1.2 Truncated SVD (Singular Value Decomposition)
+  Trong đó:
 
-- **Purpose**: Giảm số chiều của ma trận TF-IDF
-- **How it works**:
-  - Phân tích ma trận thành tích của 3 ma trận U, Σ, V^T
-  - Giữ lại k thành phần chính quan trọng nhất
-  - Giảm nhiễu và overfit
-- **Implementation**:
-  ```python
-  TruncatedSVD(n_components=100)
+  - N: tổng số văn bản
+  - DF(t): số văn bản chứa từ t
+
+  ```markdown
+  TF-IDF(t,d) = TF(t,d) × IDF(t)
   ```
 
-## 2. Classification Models
+- **Tham số chính**:
+  - `max_features`: 2000 (giới hạn số đặc trưng)
+  - `ngram_range`: (1,3) (sử dụng unigrams đến trigrams)
+  - `min_df`: 2 (loại bỏ từ hiếm)
+  - `max_df`: 0.95 (loại bỏ từ quá phổ biến)
+
+### 1.2 SVD (Singular Value Decomposition)
+
+- **Mục đích**: Giảm chiều dữ liệu và trích xuất đặc trưng quan trọng
+- **Công thức**:
+
+  ```markdown
+  A = U × Σ × V^T
+  ```
+
+  Trong đó:
+
+  - A: ma trận dữ liệu gốc
+  - U: ma trận trái trực giao
+  - Σ: ma trận đường chéo các giá trị kỳ dị
+  - V^T: chuyển vị của ma trận phải trực giao
+
+- **Tham số**: `n_components = min(n_features-1, n_samples-1)`
+
+## 2. Thuật Toán Phân Loại
 
 ### 2.1 Random Forest
 
-- **Purpose**: Phân loại sentiment bằng tập hợp nhiều cây quyết định
-- **Advantages**:
-  - Chống overfitting tốt
-  - Xử lý được dữ liệu phi tuyến tính
-  - Cho biết feature importance
-- **Parameters**:
-  ```python
-  RandomForestClassifier(
-          n_estimators=[100, 200],
-          max_depth=[None, 10, 20]
-  )
+- **Nguyên lý**: Tổng hợp nhiều cây quyết định
+- **Công thức Gini**:
+  ```markdown
+  Gini = 1 - Σ(pi)²
+  ```
+  Trong đó:
+- **Tham số tối ưu**:
+  - `n_estimators`: 200-300 cây
+  - `max_depth`: 20-30 levels
+  - `min_samples_split`: 2-5
+
+### 2.2 Linear SVM
+
+- **Nguyên lý**: Tìm siêu phẳng phân tách tối ưu
+- **Công thức**:
+
+  ```markdown
+  min(1/2 ||w||² + C Σ ξᵢ)
   ```
 
-### 2.2 Support Vector Machine (LinearSVC)
+  Ràng buộc:
 
-- **Purpose**: Phân loại bằng cách tìm siêu phẳng tối ưu
-- **Advantages**:
-  - Hiệu quả với dữ liệu có số chiều cao
-  - Phù hợp với text classification
-  - Xử lý tốt với non-linear data thông qua kernel trick
-- **Parameters**:
-  ```python
-  LinearSVC(C=[0.1, 1.0, 10.0])
+  ```markdown
+  yᵢ(w·xᵢ + b) ≥ 1 - ξᵢ
+  ξᵢ ≥ 0
   ```
+
+  Trong đó:
+
+  - w: vector trọng số
+  - C: hệ số điều chuẩn
+  - ξᵢ: biến slack
+
+- **Tham số chính**: `C = [0.1, 1.0, 10.0]`
 
 ### 2.3 Naive Bayes
 
-- **Purpose**: Phân loại dựa trên xác suất có điều kiện
-- **Advantages**:
-  - Đơn giản, nhanh
-  - Hiệu quả với dữ liệu text
-  - Hoạt động tốt với ít dữ liệu
-- **Parameters**:
-  ```python
-  MultinomialNB(alpha=[0.1, 1.0, 10.0])
+- **Nguyên lý**: Xác suất có điều kiện theo Bayes
+- **Công thức**:
+
+  ```markdown
+  P(c|x) = P(x|c)P(c)/P(x)
   ```
 
-## 3. Ensemble Learning
+  Trong đó:
 
-### 3.1 Voting Classifier
+  - P(c|x): xác suất posterior
+  - P(x|c): likelihood
+  - P(c): xác suất prior
+  - P(x): evidence
 
-- **Purpose**: Kết hợp dự đoán từ nhiều mô hình
-- **How it works**:
-  - Hard Voting: Chọn label được dự đoán nhiều nhất
-  - Soft Voting: Trung bình xác suất dự đoán
-- **Implementation**:
-  ```python
-  VotingClassifier(
-          estimators=[
-                  ('rf', RandomForestClassifier()),
-                  ('svm', LinearSVC()),
-                  ('nb', MultinomialNB())
-          ],
-          voting='hard'
-  )
+- **Tham số**: `alpha = [0.1, 0.5, 1.0]`
+
+## 3. Đánh Giá Mô Hình
+
+### 3.1 Precision-Recall
+
+```markdown
+Precision = TP/(TP + FP)
+Recall = TP/(TP + FN)
+F1-Score = 2 × (Precision × Recall)/(Precision + Recall)
+```
+
+### 3.2 ROC-AUC
+
+- **Công thức AUC**:
+  ```markdown
+  AUC = Σ(1/2 × (FPRᵢ₊₁ - FPRᵢ)(TPRᵢ₊₁ + TPRᵢ))
+  ```
+  Trong đó:
+  - TPR = TP/(TP + FN)
+  - FPR = FP/(FP + TN)
+
+## 4. Kỹ Thuật Tối Ưu Hóa
+
+### 4.1 Cross-Validation
+
+- **K-fold CV công thức**:
+  ```markdown
+  CV Score = (1/K) × Σ Score_i
+  ```
+  Trong đó:
+  - K: số fold
+  - Score_i: điểm của fold thứ i
+
+### 4.2 Grid Search
+
+- **Mục đích**: Tìm tham số tối ưu
+- **Công thức điểm cuối cùng**:
+  ```markdown
+  Final Score = (1/N) × Σ CV_Score(params)
   ```
 
-## 4. Model Selection & Optimization
+### 4.3 Ensemble Learning
 
-### 4.1 Grid Search with Cross Validation
+- **Voting công thức**:
+  ```markdown
+  Final Prediction = mode(predictions_i)
+  Confidence = max(count(predictions_i)/total_models)
+  ```
 
-- **Purpose**: Tìm hyperparameters tối ưu
-- **How it works**:
-  - Thử tất cả tổ hợp parameters có thể
-  - Đánh giá bằng cross-validation
-  - Chọn tổ hợp tốt nhất
-- **Metrics**:
-  - F1 Score (weighted)
-  - Cross-validation score
-  - Training time
+## 5. Pipeline Xử Lý
 
-## 5. Data Augmentation Techniques
+### 5.1 Chuẩn Hóa Dữ Liệu
 
-### 5.1 Text Augmentation
+- **MinMax Scaling**:
 
-- Synonym Replacement
-- Random Swap
-- Random Insertion
-- Random Deletion
-- Text Humanization
+  ```markdown
+  X_scaled = (X - X_min)/(X_max - X_min)
+  ```
 
-### 5.2 Statistical Features
+- **Z-Score Normalization**:
+  ```markdown
+  X_norm = (X - μ)/σ
+  ```
 
-- Text length
-- Word count
-- Average word length
-- Special character ratio
+### 5.2 Feature Selection
 
-## 6. Model Evaluation
+- **Chi-square Test**:
+  ```markdown
+  χ² = Σ((O - E)²/E)
+  ```
+  Trong đó:
+  - O: giá trị quan sát
+  - E: giá trị kỳ vọng
 
-### 6.1 Metrics
+### 5.3 Class Balancing
 
-- Precision: Độ chính xác của các dự đoán positive
-- Recall: Tỷ lệ positive cases được phát hiện
-- F1 Score: Trung bình điều hòa của Precision và Recall
-- Confusion Matrix: Ma trận nhầm lẫn giữa các classes
+- **Class Weights**:
+  ```markdown
+  weight_i = n_samples/(n_classes × n_samples_class_i)
+  ```
 
-### 6.2 Visualization
+## 6. Các Metric Đánh Giá
 
-- Feature Importance Plot
-- Cross-validation Score Distribution
-- Learning Curves
-- Confusion Matrix Heatmap
+### 6.1 Confusion Matrix
+
+```markdown
+     Predicted
+     Actual P N
+     P TP FN
+     N FP TN
+```
+
+### 6.2 Classification Report
+
+- **Macro Average**:
+
+  ```
+  Macro_avg = (1/n_classes) × Σ metric_per_class
+  ```
+
+- **Weighted Average**:
+  ```
+  Weighted_avg = Σ(metric_per_class × support_per_class)/total_support
+  ```
+
+## 7. Mục Đích Sử Dụng Các Thành Phần
+
+### 7.1 Thành Phần Trích Xuất Đặc Trưng
+
+- **TfidfVectorizer**:
+
+  - Chuyển đổi văn bản thành vector số dựa trên tần suất từ
+  - Chuẩn hóa và tính toán trọng số cho các từ
+
+- **TruncatedSVD**:
+  - Giảm chiều dữ liệu vector
+  - Chọn lọc đặc trưng quan trọng nhất
+
+### 7.2 Các Mô Hình Phân Loại
+
+#### 7.2.1 Khởi Tạo Mô Hình
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import LinearSVC
+from sklearn.naive_bayes import MultinomialNB
+
+rf = RandomForestClassifier(
+    n_estimators=300,
+    max_depth=30,
+    class_weight='balanced'
+)
+
+svm = LinearSVC(
+    C=1.0,
+    max_iter=2000,
+    class_weight='balanced'
+)
+
+nb = MultinomialNB(
+    alpha=0.1,
+    fit_prior=True
+)
+```
+
+#### 7.2.2 Mục Đích Từng Mô Hình
+
+- **RandomForestClassifier**: Tổng hợp dự đoán từ nhiều cây quyết định
+- **LinearSVC**: Phân loại tuyến tính với SVM
+- **MultinomialNB**: Phân loại xác suất cho văn bản
+
+### 7.3 Kỹ Thuật Tối Ưu
+
+#### 7.3.1 Code Tối Ưu
+
+```python
+from sklearn.model_selection import GridSearchCV
+from sklearn.feature_selection import SelectKBest, chi2
+
+param_grid = {
+    'rf__n_estimators': [200, 300],
+    'rf__max_depth': [20, 30],
+    'svm__C': [0.1, 1.0, 10.0],
+    'nb__alpha': [0.1, 0.5, 1.0]
+}
+
+grid_search = GridSearchCV(
+    estimator=pipeline,
+    param_grid=param_grid,
+    cv=5,
+    scoring='f1_weighted'
+)
+
+feature_selector = SelectKBest(
+    score_func=chi2,
+    k=200
+)
+```
+
+#### 7.3.2 Mục Đích Tối Ưu
+
+- **GridSearchCV**: Tìm tham số tối ưu cho mô hình
+- **SelectKBest**: Chọn đặc trưng quan trọng
+
+### 7.4 Tiền Xử Lý và Tăng Cường Dữ Liệu
+
+#### 7.4.1 Code Xử Lý
+
+```python
+import re
+from nltk.tokenize import word_tokenize
+
+def clean_text(text):
+    text = re.sub(r'[^\w\s]', '', text)
+    text = text.lower()
+    return ' '.join(word_tokenize(text))
+
+def augment_text(text):
+    augmented = []
+    tokens = text.split()
+    augmented.append(' '.join(random.sample(tokens, len(tokens))))
+    return augmented
+```
+
+#### 7.4.2 Mục Đích Xử Lý
+
+- **Làm sạch văn bản**: Chuẩn hóa và xử lý nhiễu
+- **Tăng cường dữ liệu**: Mở rộng tập huấn luyện
