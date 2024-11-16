@@ -1,6 +1,5 @@
 import os
 
-
 class Config:
     # Paths
     ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -69,4 +68,96 @@ class Config:
         'checkpoint_frequency': 1,  # Save checkpoint every N epochs
         'model_format': 'pkl',
         'compression': True
+    }
+
+    # Expanded emotion mapping
+    EMOTION_MAPPING = {
+        # Positive emotions (2)
+        'happy': {'id': 2.1, 'sentiment': 2, 'vi': 'vui vẻ', 'emoji': '😊'},
+        'excited': {'id': 2.2, 'sentiment': 2, 'vi': 'phấn khích', 'emoji': '🤗'},
+        'satisfied': {'id': 2.3, 'sentiment': 2, 'vi': 'hài lòng', 'emoji': '😌'},
+        'proud': {'id': 2.4, 'sentiment': 2, 'vi': 'tự hào', 'emoji': '😊'},
+        
+        # Neutral emotions (1)
+        'neutral': {'id': 1.0, 'sentiment': 1, 'vi': 'bình thường', 'emoji': '😐'},
+        'surprised': {'id': 1.1, 'sentiment': 1, 'vi': 'ngạc nhiên', 'emoji': '😮'},
+        'confused': {'id': 1.2, 'sentiment': 1, 'vi': 'bối rối', 'emoji': '😕'},
+        
+        # Negative emotions (0)
+        'sad': {'id': 0.1, 'sentiment': 0, 'vi': 'buồn', 'emoji': '😢'},
+        'angry': {'id': 0.2, 'sentiment': 0, 'vi': 'giận dữ', 'emoji': '😠'},
+        'disappointed': {'id': 0.3, 'sentiment': 0, 'vi': 'thất vọng', 'emoji': '😞'},
+        'frustrated': {'id': 0.4, 'sentiment': 0, 'vi': 'bực bội', 'emoji': '😤'},
+        'worried': {'id': 0.5, 'sentiment': 0, 'vi': 'lo lắng', 'emoji': '😟'}
+    }
+
+    # Emotion keywords for each category
+    EMOTION_KEYWORDS = {
+        'vi': {
+            'happy': ['vui', 'hạnh phúc', 'thích', 'tuyệt vời', 'tốt', 'thú vị'],
+            'excited': ['phấn khích', 'hào hứng', 'tuyệt quá', 'wow'],
+            'satisfied': ['hài lòng', 'thoải mái', 'ổn', 'được'],
+            'proud': ['tự hào', 'xuất sắc', 'giỏi'],
+            'neutral': ['bình thường', 'tạm', 'okay'],
+            'surprised': ['ngạc nhiên', 'bất ngờ', 'không ngờ'],
+            'confused': ['bối rối', 'không hiểu', 'lạ'],
+            'sad': ['buồn', 'khổ', 'chán', 'thương'],
+            'angry': ['giận', 'tức', 'khó chịu', 'ghét'],
+            'disappointed': ['thất vọng', 'không được', 'kém'],
+            'frustrated': ['bực', 'khó chịu', 'phiền'],
+            'worried': ['lo', 'sợ', 'không an tâm']
+        },
+        'en': {
+            # Similar structure for English
+            # ...existing English keywords...
+        }
+    }
+
+    # API Configuration
+    API_CONFIG = {
+        'HOST': '0.0.0.0',
+        'PORT': 7270,
+        'WORKERS': 4,
+        'TIMEOUT': 60,
+        'RELOAD': True,
+        'CORS_ORIGINS': ["*"],
+        'MAX_REQUEST_SIZE': 1024 * 1024,  # 1MB
+        'RATE_LIMIT': {
+            'requests': 10000,
+            'window': 60  # seconds
+        }
+    }
+
+    # Dashboard Configuration
+    DASHBOARD_CONFIG = {
+        'update_interval': 5,  # seconds
+        'metrics_history': 100,  # number of historical data points to keep
+        'charts': {
+            'request_rate': {'window': 60},  # 1 minute window
+            'response_time': {'window': 300},  # 5 minute window
+            'error_rate': {'window': 300}
+        }
+    }
+
+    # Metrics Configuration
+    METRICS_CONFIG = {
+        'collect_detailed_metrics': True,
+        'metrics_retention_days': 7,
+        'metrics_file': 'api_metrics.json',
+        'alert_thresholds': {
+            'error_rate': 0.1,  # 10% error rate
+            'response_time': 1.0,  # 1 second
+            'memory_usage': 0.8  # 80% memory usage
+        }
+    }
+
+    # Error messages
+    ERROR_MESSAGES = {
+        'MODEL_NOT_FOUND': 'Model not found for language {}',
+        'PREPROCESSING_FAILED': 'Text preprocessing failed',
+        'FEATURE_EXTRACTION_FAILED': 'Feature extraction failed',
+        'PREDICTION_FAILED': 'Prediction failed',
+        'INVALID_LANGUAGE': 'Invalid language. Must be "vi" or "en"',
+        'EMPTY_TEXT': 'Empty text provided',
+        'SERVER_ERROR': 'Internal server error'
     }

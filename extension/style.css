@@ -1,0 +1,66 @@
+.sentiment-analyze-btn {
+  background-color: #1877f2;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  margin: 5px 0;
+  transition: background-color 0.2s;
+}
+
+.sentiment-analyze-btn:hover {
+  background-color: #166fe5;
+}
+
+.sentiment-result {
+  margin: 5px 0;
+  padding: 10px;
+  border-radius: 8px;
+  background-color: #f0f2f5;
+  font-size: 13px;
+}
+
+.sentiment-positive {
+  border-left: 4px solid #4caf50;
+}
+
+.sentiment-neutral {
+  border-left: 4px solid #ff9800;
+}
+
+.sentiment-negative {
+  border-left: 4px solid #f44336;
+}
+
+.sentiment-button-container {
+  margin: 8px 0;
+}
+
+.comment-buttons-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sentiment-analyze-btn-inline {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    color: #65676B;
+    font-size: inherit;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background-color 0.2s;
+}
+
+.sentiment-analyze-btn-inline:hover {
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.analyze-comments-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}

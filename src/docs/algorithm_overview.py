@@ -1,4 +1,4 @@
-class AlgorithmOverview:
+class TongQuanThuatToan:
     """
     Tổng quan về các thuật toán sử dụng trong hệ thống phân tích cảm xúc.
     """

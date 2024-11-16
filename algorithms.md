@@ -44,7 +44,6 @@
   - V^T: chuyển vị của ma trận phải trực giao
 
 - **Tham số**: `n_components = min(n_features-1, n_samples-1)`
-
 ## 2. Thuật Toán Phân Loại
 
 ### 2.1 Random Forest

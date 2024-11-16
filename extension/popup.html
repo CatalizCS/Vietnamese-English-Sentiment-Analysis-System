@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <link href="popup.css" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="w-[380px] p-5 bg-gray-50 font-[Inter]">
+    <div class="space-y-4">
+      <!-- Header with gradient -->
+      <div
+        class="relative -mx-5 -mt-5 px-5 pt-8 pb-5 bg-gradient-to-r from-blue-600 to-blue-700 mb-6"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <h2 class="text-xl font-semibold text-white mb-1">
+              Sentiment Analyzer
+            </h2>
+            <p class="text-blue-100 text-sm">Phân tích cảm xúc Facebook</p>
+          </div>
+          <div class="flex items-center space-x-2">
+            <div id="status-indicator" 
+                 class="h-3 w-3 rounded-full bg-gray-300"></div>
+            <div id="status-badge" 
+                 class="flex items-center space-x-1 px-2 py-1 rounded-full bg-white/10">
+              <span id="status-text" class="text-xs font-medium text-white">Checking...</span>
+              <span id="status-models" class="text-xs text-white/80 hidden"></span>
+            </div>
+          </div>
+        </div>
+        <button id="analyzeCurrentPost" 
+                class="mt-4 w-full bg-white/10 hover:bg-white/20 text-white py-2 px-4 rounded-md">
+          Phân tích bài viết này
+        </button>
+      </div>
+
+      <!-- Error Container - Move to top for better visibility -->
+      <div id="error-container" 
+           class="hidden p-3 mb-4 rounded-md bg-red-100 text-red-700 text-sm">
+      </div>
+
+      <!-- API Status Card -->
+      <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="font-medium text-gray-900">API Status</h3>
+            <p class="text-sm text-gray-500 mt-1" id="apiStatus">
+              Đang kiểm tra kết nối...
+            </p>
+          </div>
+          <div
+            class="flex h-10 w-10 items-center justify-center rounded-full bg-blue-50"
+          >
+            <svg
+              class="h-5 w-5 text-blue-600"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M13 10V3L4 14h7v7l9-11h-7z"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- Statistics Cards -->
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Analyzed Posts Card -->
+        <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+          <div class="flex flex-col">
+            <div class="flex items-center space-x-2 text-sm text-gray-500 mb-2">
+              <svg
+                class="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                />
+              </svg>
+              <span>Bài phân tích</span>
+            </div>
+            <span class="text-2xl font-bold text-gray-900" id="analyzed-count"
+              >0</span
+            >
+          </div>
+        </div>
+
+        <!-- Success Rate Card -->
+        <div class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+          <div class="flex flex-col">
+            <div class="flex items-center space-x-2 text-sm text-gray-500 mb-2">
+              <svg
+                class="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"
+                />
+              </svg>
+              <span>Tỷ lệ thành công</span>
+            </div>
+            <span class="text-2xl font-bold text-gray-900" id="success-rate"
+              >0%</span
+            >
+          </div>
+        </div>
+      </div>
+
+      <!-- API Configuration Card -->
+      <div
+        class="bg-white rounded-xl border border-gray-200 p-4 shadow-sm mt-4"
+      >
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="font-medium text-gray-900">API Configuration</h3>
+          <div class="space-x-2">
+            <button
+              id="resetApiConfig"
+              class="text-sm bg-gray-500 text-white px-3 py-1 rounded-md hover:bg-gray-600"
+            >
+              Reset
+            </button>
+            <button
+              id="saveApiConfig"
+              class="text-sm bg-blue-600 text-white px-3 py-1 rounded-md hover:bg-blue-700"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+        <div class="space-y-2">
+          <input
+            type="text"
+            id="apiUrl"
+            class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+            placeholder="Enter API URL (e.g., http://localhost:7270)"
+          />
+          <div class="flex items-center space-x-2 text-sm text-gray-500">
+            <span id="apiUrlStatus" class="text-xs"></span>
+          </div>
+        </div>
+        <!-- Add last update timestamp -->
+        <div class="mt-2 text-center">
+          <span id="last-update" class="text-xs text-gray-500"
+            >Last updated: --:--:--</span
+          >
+        </div>
+      </div>
+
+      <!-- Error Message Container -->
+      <div
+        id="error-container"
+        class="hidden mt-2 p-2 rounded-md bg-red-100 text-red-700 text-sm"
+      ></div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

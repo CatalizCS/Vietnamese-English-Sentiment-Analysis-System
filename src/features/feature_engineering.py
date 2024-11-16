@@ -10,24 +10,34 @@ import re
 
 class FeatureExtractor:
     def __init__(self, language: str, config):
-        self.language = language
-        self.config = config
-        self.tfidf = None
-        self.svd = None
-        self.scaler = None
-        self.feature_dims = None
-        self.vocabulary = None
-        self.n_features = None
-        self.min_components = 2
-        self.is_fitted = False  # Move is_fitted initialization before method calls
-        self.word_vectorizer = None
-        self.char_vectorizer = None
-        self.sentiment_lexicon = self._load_sentiment_lexicon()
-        self.positive_words = self._load_word_list('positive')
-        self.negative_words = self._load_word_list('negative')
-        self._initialize_extractors()  # Try to load first
-        if not self.is_fitted:  # Only initialize base if loading failed
-            self._initialize_base_extractors()
+        try:
+            self.language = language
+            self.config = config
+            self.is_fitted = False
+            
+            # Initialize all required attributes
+            self.tfidf = None
+            self.svd = None
+            self.scaler = None
+            self.feature_dims = None
+            self.vocabulary = None
+            self.n_features = None
+            self.min_components = 2
+            self.word_vectorizer = None
+            self.char_vectorizer = None
+            
+            # Load lexicons and initialize vectorizers
+            self.sentiment_lexicon = self._load_sentiment_lexicon()
+            self.positive_words = self._load_word_list('positive')
+            self.negative_words = self._load_word_list('negative')
+            
+            # Try loading existing extractors first
+            if not self._initialize_extractors():
+                self._initialize_base_extractors()
+                
+        except Exception as e:
+            print(f"Error initializing FeatureExtractor: {str(e)}")
+            raise
 
     def _initialize_base_extractors(self):
         """Initialize basic extractors regardless of model existence"""

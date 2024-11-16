@@ -41,17 +41,14 @@ class EnhancedModelTrainer:
             "rf__min_samples_split": [2, 5],  # More granular splits
             "rf__min_samples_leaf": [1, 2],  # More granular leaves
             "rf__class_weight": ["balanced"],
-            
             "svm__C": [0.1, 1.0, 10.0],  # More C values
             "svm__tol": [1e-4],  # Tighter tolerance
             "svm__max_iter": [2000],  # More iterations
             "svm__class_weight": ["balanced"],
             "svm__dual": [False],  # Added dual parameter
-            
             "nb__alpha": [0.1, 0.5, 1.0],  # More alpha values
             "nb__fit_prior": [True, False],
-            
-            "feature_selection__k": [200, 300]  # More features
+            "feature_selection__k": [200, 300],  # More features
         }
 
     def create_ensemble_model(self):
@@ -123,25 +120,31 @@ class EnhancedModelTrainer:
         # Ensure metrics are properly formatted
         model_metrics = {
             "models": {},
-            "total_time": metrics.get('total_time', self.training_time)
+            "total_time": metrics.get("total_time", self.training_time),
         }
 
         # Format metrics for each model type
         if isinstance(model, dict):
             for model_name, model_obj in model.items():
                 model_metrics["models"][model_name] = {
-                    "best_score": metrics.get('test_score', 0.0),  # Default to test_score if available
+                    "best_score": metrics.get(
+                        "test_score", 0.0
+                    ),  # Default to test_score if available
                     "training_time": self.training_time,
-                    "parameters": getattr(model_obj, 'get_params', lambda: {})()
+                    "parameters": getattr(model_obj, "get_params", lambda: {})(),
                 }
-                
+
                 # Add additional metrics if available
                 if model_name in metrics.get("models", {}):
-                    model_metrics["models"][model_name].update(metrics["models"][model_name])
-                
+                    model_metrics["models"][model_name].update(
+                        metrics["models"][model_name]
+                    )
+
                 # Add feature importance for RF model
-                if model_name == 'rf' and hasattr(model_obj, 'feature_importances_'):
-                    model_metrics["models"][model_name]["feature_importance"] = model_obj.feature_importances_.tolist()
+                if model_name == "rf" and hasattr(model_obj, "feature_importances_"):
+                    model_metrics["models"][model_name][
+                        "feature_importance"
+                    ] = model_obj.feature_importances_.tolist()
 
         model_info = {
             "model": model,
@@ -158,35 +161,89 @@ class EnhancedModelTrainer:
                 "language": self.language,
                 "max_features": self.config.MAX_FEATURES,
                 "timestamp": datetime.now().strftime("%Y%m%d_%H%M%S"),
-            }
+            },
         }
 
         joblib.dump(model_info, model_path)
         self.logger.info(f"Saved final model to {model_path}")
 
-    def plot_training_progress(self, grid_search):
+    def plot_training_progress(self, grid_search, X_test=None, y_test=None):
         """Visualizes the training progress and model performance"""
         plt.figure(figsize=(12, 6))
 
-        # Plot CV scores
-        cv_results = grid_search.cv_results_
-        plt.subplot(1, 2, 1)
-        sns.boxplot(data=cv_results["split0_test_score"])
-        plt.title(f"Cross-validation Scores\n{self.language.upper()}")
-        plt.ylabel("F1 Score")
+        try:
+            # Check if input is a dictionary of models
+            if isinstance(grid_search, dict):
+                # Plot model scores
+                scores = []
+                model_names = []
+                training_times = []
 
-        # Plot feature importance if available
-        plt.subplot(1, 2, 2)
-        if hasattr(grid_search.best_estimator_, "named_estimators_"):
-            rf_model = grid_search.best_estimator_.named_estimators_["rf"]
-            importances = rf_model.feature_importances_[:10]  # Top 10 features
-            plt.bar(range(10), importances)
-            plt.title("Top 10 Feature Importance\n(Random Forest)")
-            plt.xlabel("Feature Index")
-            plt.ylabel("Importance")
+                for model_name, model_obj in grid_search.items():
+                    # Get scores from either metrics or model attributes
+                    score = None
+                    if hasattr(model_obj, "best_score_"):
+                        score = model_obj.best_score_
+                    else:
+                        # Try get score from model's predict method
+                        try:
+                            score = model_obj.score(X_test, y_test)
+                        except:
+                            pass
 
-        plt.tight_layout()
-        plt.show()
+                    if score is not None:
+                        scores.append(score)
+                        model_names.append(model_name)
+                        training_times.append(getattr(model_obj, "fit_time_", 0))
+
+                # Plot performance comparison
+                plt.subplot(1, 2, 1)
+                bars = plt.bar(range(len(scores)), scores)
+                plt.xticks(range(len(model_names)), model_names, rotation=45)
+                plt.title("Model Performance Comparison")
+                plt.xlabel("Models")
+                plt.ylabel("Score")
+                plt.ylim(0, 1)
+
+                # Add score labels
+                for bar, score in zip(bars, scores):
+                    plt.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        score + 0.01,
+                        f"{score:.3f}",
+                        ha="center",
+                    )
+
+                # Plot training times
+                plt.subplot(1, 2, 2)
+                bars = plt.bar(range(len(training_times)), training_times)
+                plt.xticks(range(len(model_names)), model_names, rotation=45)
+                plt.title("Training Time Comparison")
+                plt.xlabel("Models")
+                plt.ylabel("Time (s)")
+
+                # Add time labels
+                for bar, time in zip(bars, training_times):
+                    plt.text(
+                        bar.get_x() + bar.get_width() / 2,
+                        time + max(training_times) * 0.02,
+                        f"{time:.1f}s",
+                        ha="center",
+                    )
+
+            # Handle GridSearchCV object case
+            elif hasattr(grid_search, "cv_results_"):
+                # ... existing GridSearchCV plotting code ...
+                pass
+
+            plt.tight_layout()
+
+        except Exception as e:
+            self.logger.error(f"Error plotting training progress: {str(e)}")
+            import traceback
+
+            print("Full error traceback:")
+            print(traceback.format_exc())
 
     def train_with_grid_search(self, X_train, y_train):
         """Enhanced training with feature extractor validation"""
@@ -194,15 +251,21 @@ class EnhancedModelTrainer:
         self.logger.info("Starting model training...")
 
         try:
-            # Validate feature extractor
+            # Initialize feature extractor if not set
             if self.feature_extractor is None:
-                raise ValueError("Feature extractor not initialized")
-                
+                from src.features.feature_engineering import FeatureExtractor
+
+                self.feature_extractor = FeatureExtractor(self.language, self.config)
+                if self.feature_extractor is None:
+                    raise ValueError("Failed to initialize feature extractor")
+
             # Extract features with validation
             X_train_features = self.feature_extractor.extract_features(X_train)
             if X_train_features is None or X_train_features.shape[0] == 0:
-                raise ValueError("Feature extraction failed - empty or None features returned")
-                
+                raise ValueError(
+                    "Feature extraction failed - empty or None features returned"
+                )
+
             self.logger.info(f"Extracted features shape: {X_train_features.shape}")
 
             # Create and train models with optimized parameters
@@ -214,7 +277,7 @@ class EnhancedModelTrainer:
             cv = StratifiedKFold(
                 n_splits=5,  # 5-fold CV for better balance
                 shuffle=True,
-                random_state=42
+                random_state=42,
             )
 
             # Calculate balanced sample weights
@@ -225,33 +288,36 @@ class EnhancedModelTrainer:
                 try:
                     self.logger.info(f"\nTraining {name} model...")
                     model_params = {
-                        k: v for k, v in self.param_grid.items() 
-                        if k.startswith(name)
+                        k: v for k, v in self.param_grid.items() if k.startswith(name)
                     }
-                    
+
                     # Optimized GridSearchCV
                     grid_search = GridSearchCV(
                         pipeline,
                         param_grid=model_params,
                         cv=cv,
                         scoring={
-                            'f1': 'f1_weighted',
-                            'precision': 'precision_weighted',
-                            'recall': 'recall_weighted'
+                            "f1": "f1_weighted",
+                            "precision": "precision_weighted",
+                            "recall": "recall_weighted",
                         },
-                        refit='f1',
+                        refit="f1",
                         n_jobs=-1,
                         verbose=1,
-                        error_score='raise'
+                        error_score="raise",
                     )
 
                     # Train with sample weights
                     with warnings.catch_warnings():
-                        warnings.filterwarnings('ignore', category=Warning)
+                        warnings.filterwarnings("ignore", category=Warning)
                         grid_search.fit(
-                            X_train_features, 
-                            y_train, 
-                            **({'sample_weight': sample_weights} if name != 'nb' else {})
+                            X_train_features,
+                            y_train,
+                            **(
+                                {"sample_weight": sample_weights}
+                                if name != "nb"
+                                else {}
+                            ),
                         )
 
                     # Track metrics

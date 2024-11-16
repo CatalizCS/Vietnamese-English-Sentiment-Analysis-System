@@ -56,6 +56,17 @@ cover/
 *.pot
 
 # Django stuff:
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Chrome Extension
+*.crx
+*.pem
+*.pub
 *.log
 local_settings.py
 db.sqlite3

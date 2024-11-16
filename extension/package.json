@@ -1,0 +1,8 @@
+{
+  "scripts": {
+    "build": "tailwindcss -i ./src/input.css -o ./popup.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.3.0"
+  }
+}

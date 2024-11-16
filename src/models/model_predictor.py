@@ -141,3 +141,76 @@ class SentimentPredictor:
             })
             
         return predictions
+
+    def predict_emotion(self, features, text: str = None):
+        """Predict detailed emotion with confidence scores"""
+        try:
+            # Get base sentiment prediction
+            sentiment = self.predict(features)[0]
+            probabilities = self.predict_proba(features)[0]
+            base_confidence = max(probabilities)
+            
+            # Initialize emotion detector if text is provided
+            emotion_scores = {}
+            
+            if text:
+                text = text.lower()
+                # Get emotion keywords for the current language
+                keywords = self.config.EMOTION_KEYWORDS.get(self.language, {})
+                
+                # Calculate emotion scores based on keyword presence
+                for emotion, words in keywords.items():
+                    score = sum(1 for word in words if word in text)
+                    multiplier = 1.0
+                    
+                    # Adjust score based on punctuation and capitalization
+                    if '!' in text:
+                        multiplier *= 1.2
+                    if text.isupper():
+                        multiplier *= 1.3
+                    
+                    emotion_scores[emotion] = score * multiplier
+
+                # Normalize scores
+                total = sum(emotion_scores.values()) or 1
+                emotion_scores = {k: v/total for k, v in emotion_scores.items()}
+
+            # Get emotion mapping for the predicted sentiment
+            valid_emotions = {
+                emotion: details for emotion, details in self.config.EMOTION_MAPPING.items()
+                if details['sentiment'] == sentiment
+            }
+            
+            # Select most likely emotion
+            if emotion_scores:
+                # Filter emotions by base sentiment
+                valid_scores = {
+                    emotion: score for emotion, score in emotion_scores.items()
+                    if emotion in valid_emotions
+                }
+                
+                if valid_scores:
+                    predicted_emotion = max(valid_scores.items(), key=lambda x: x[1])[0]
+                else:
+                    # Fallback to default emotion for sentiment
+                    predicted_emotion = next(iter(valid_emotions))
+            else:
+                # Fallback if no text analysis
+                predicted_emotion = next(iter(valid_emotions))
+
+            # Get emotion details
+            emotion_info = self.config.EMOTION_MAPPING[predicted_emotion]
+            
+            return {
+                'sentiment': sentiment,
+                'sentiment_confidence': base_confidence,
+                'emotion': predicted_emotion,
+                'emotion_vi': emotion_info['vi'],
+                'emotion_emoji': emotion_info['emoji'],
+                'emotion_confidence': base_confidence * 0.8,  # Slightly lower confidence for detailed emotion
+                'emotion_scores': emotion_scores if emotion_scores else None
+            }
+            
+        except Exception as e:
+            print(f"Error in emotion prediction: {str(e)}")
+            return None

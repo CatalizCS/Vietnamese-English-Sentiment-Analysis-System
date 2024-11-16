@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sentiment Analysis API Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      .metric-card {
+        background-color: white;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+      }
+      .metric-title {
+        color: #718096;
+        font-size: 0.875rem;
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+      }
+      .metric-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: #2d3748;
+      }
+      .chart-container {
+        background-color: white;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1), 0 1px 2px rgba(0, 0, 0, 0.06);
+        margin-top: 1rem;
+      }
+    </style>
+  </head>
+  <body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+      <header class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-800">API Dashboard</h1>
+        <p class="text-gray-600">Real-time monitoring and metrics</p>
+      </header>
+
+      <!-- System Status -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div class="metric-card">
+          <div class="metric-title">System Status</div>
+          <div class="metric-value" id="system-status">
+            <span class="text-green-500">●</span> Running
+          </div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Uptime</div>
+          <div class="metric-value" id="uptime">--:--:--</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Total Requests</div>
+          <div class="metric-value" id="total-requests">0</div>
+        </div>
+      </div>
+
+      <!-- Resource Metrics -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+        <div class="metric-card">
+          <div class="metric-title">CPU Usage</div>
+          <div class="metric-value"><span id="cpu-usage">0</span>%</div>
+          <div id="cpu-chart" class="h-40"></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-title">Memory Usage</div>
+          <div class="metric-value"><span id="memory-usage">0</span>%</div>
+          <div id="memory-chart" class="h-40"></div>
+        </div>
+      </div>
+
+      <!-- Performance Metrics -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="chart-container">
+          <h3 class="text-lg font-semibold mb-4">Request Rate</h3>
+          <div id="request-rate-chart" class="h-64"></div>
+        </div>
+        <div class="chart-container">
+          <h3 class="text-lg font-semibold mb-4">Response Time</h3>
+          <div id="response-time-chart" class="h-64"></div>
+        </div>
+      </div>
+
+      <!-- Model Status -->
+      <div class="mt-8">
+        <h3 class="text-lg font-semibold mb-4">Model Status</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="metric-card" id="vi-model-status">
+            <div class="metric-title">Vietnamese Model</div>
+            <div class="metric-value">Loading...</div>
+          </div>
+          <div class="metric-card" id="en-model-status">
+            <div class="metric-title">English Model</div>
+            <div class="metric-value">Loading...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let ws;
+      let reconnectAttempts = 0;
+      const maxReconnectAttempts = 5;
+      const reconnectDelay = 3000;
+      let pingInterval;
+      let connectionTimeout;
+
+      function handleReconnect(reason) {
+          document.getElementById("system-status").innerHTML = 
+              '<span class="text-yellow-500">●</span> Disconnected';
+
+          if (reconnectAttempts < maxReconnectAttempts) {
+              reconnectAttempts++;
+              console.log(`Reconnecting... Attempt ${reconnectAttempts} (${reason})`);
+              setTimeout(connectWebSocket, reconnectDelay);
+          } else {
+              document.getElementById("system-status").innerHTML = 
+                  '<span class="text-red-500">●</span> Connection Failed';
+              console.error("Max reconnection attempts reached");
+          }
+      }
+
+      async function connectWebSocket() {
+          try {
+              const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+              // Use window.location.host if available, otherwise default to localhost:7270
+              const host = window.location.host || 'localhost:7270';
+              const wsUrl = `${wsProtocol}//${host}/ws/metrics`;
+              
+              console.log('Connecting to WebSocket:', wsUrl);
+              
+              if (ws) {
+                  ws.close();
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+
+              ws = new WebSocket(wsUrl);
+              // ...existing WebSocket event handlers...
+          } catch (error) {
+              console.error('WebSocket connection error:', error);
+              handleReconnect('Connection failed');
+          }
+      }
+
+      window.addEventListener("load", connectWebSocket);
+
+      document.getElementById("system-status").parentElement.innerHTML += `
+        <button onclick="handleManualReconnect()" 
+                id="reconnectBtn"
+                class="mt-2 px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">
+          Reconnect
+        </button>`;
+
+      function handleManualReconnect() {
+        const btn = document.getElementById("reconnectBtn");
+        btn.disabled = true;
+        btn.classList.add("opacity-50");
+        reconnectAttempts = 0;
+        connectWebSocket();
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.classList.remove("opacity-50");
+        }, 3000);
+      }
+
+      // Initialize charts
+      const cpuData = {
+        x: [],
+        y: [],
+        type: "line",
+        name: "CPU Usage",
+      };
+
+      const memoryData = {
+        x: [],
+        y: [],
+        type: "line",
+        name: "Memory Usage",
+      };
+
+      const requestRateData = {
+        x: [],
+        y: [],
+        type: "bar",
+        name: "Requests/sec",
+      };
+
+      const responseTimeData = {
+        x: [],
+        y: [],
+        type: "scatter",
+        mode: "lines",
+        name: "Avg Response Time",
+      };
+
+      // Create charts
+      Plotly.newPlot("cpu-chart", [cpuData], {
+        margin: { t: 0, b: 20, l: 30, r: 10 },
+        yaxis: { range: [0, 100] },
+      });
+
+      Plotly.newPlot("memory-chart", [memoryData], {
+        margin: { t: 0, b: 20, l: 30, r: 10 },
+        yaxis: { range: [0, 100] },
+      });
+
+      Plotly.newPlot("request-rate-chart", [requestRateData], {
+        margin: { t: 0, b: 30, l: 40, r: 10 },
+        yaxis: { title: "Requests/sec" },
+      });
+
+      Plotly.newPlot("response-time-chart", [responseTimeData], {
+        margin: { t: 0, b: 30, l: 40, r: 10 },
+        yaxis: { title: "Response Time (s)" },
+      });
+
+      function updateMetrics(metrics) {
+        // Update basic metrics
+        document.getElementById("cpu-usage").textContent =
+          metrics.cpu_usage.toFixed(1);
+        document.getElementById("memory-usage").textContent =
+          metrics.memory_usage.percent.toFixed(1);
+
+        // Update model status
+        updateModelStatus("vi", metrics.model_status.vi);
+        updateModelStatus("en", metrics.model_status.en);
+      }
+
+      function updateModelStatus(lang, status) {
+        const element = document.getElementById(`${lang}-model-status`);
+        const statusDiv = element.querySelector(".metric-value");
+        statusDiv.innerHTML = status
+          ? '<span class="text-green-500">●</span> Active'
+          : '<span class="text-red-500">●</span> Inactive';
+      }
+
+      function updateCharts(metrics) {
+        const now = new Date();
+
+        // Update CPU chart
+        Plotly.extendTraces(
+          "cpu-chart",
+          {
+            x: [[now]],
+            y: [[metrics.cpu_usage]],
+          },
+          [0]
+        );
+
+        // Update memory chart
+        Plotly.extendTraces(
+          "memory-chart",
+          {
+            x: [[now]],
+            y: [[metrics.memory_usage.percent]],
+          },
+          [0]
+        );
+
+        // Update request rate chart
+        Plotly.extendTraces(
+          "request-rate-chart",
+          {
+            x: [[now]],
+            y: [[metrics.requests_per_sec]],
+          },
+          [0]
+        );
+
+        // Update response time chart
+        Plotly.extendTraces(
+          "response-time-chart",
+          {
+            x: [[now]],
+            y: [[metrics.avg_response_time]],
+          },
+          [0]
+        );
+
+        // Keep last 50 points on charts
+        const maxPoints = 50;
+        if (cpuData.x.length > maxPoints) {
+          Plotly.relayout("cpu-chart", {
+            xaxis: {
+              range: [now - 60000, now],
+            },
+          });
+        }
+      }
+
+      // Update uptime
+      function updateUptime() {
+        const startTime = new Date("{{ start_time }}");
+        const now = new Date();
+        const diff = Math.floor((now - startTime) / 1000);
+
+        const hours = Math.floor(diff / 3600);
+        const minutes = Math.floor((diff % 3600) / 60);
+        const seconds = diff % 60;
+
+        document.getElementById("uptime").textContent = `${hours}:${minutes
+          .toString()
+          .padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
+      }
+
+      setInterval(updateUptime, 1000);
+      updateUptime();
+
+      // Update total requests
+      document.getElementById("total-requests").textContent =
+        "{{ total_requests }}";
+    </script>
+  </body>
+</html>
