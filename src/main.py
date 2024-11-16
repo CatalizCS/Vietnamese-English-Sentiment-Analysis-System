@@ -19,14 +19,9 @@ import time
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(project_root)
 
-from data.data_collection import DataCollector
-from src.api.app import (
-    get_server_logs,
-    is_port_in_use,
-    start_api_server,
-    stop_api_server,
-    get_api_status,
-)
+from src.data.data_collection import DataCollector
+from src.utils.server_utils import force_kill_port, is_port_in_use
+from src.api.app import app, start_api_server, stop_api_server, get_api_status
 from src.config import Config
 from src.data.data_loader import DataLoader
 from src.data.preprocessor import DataPreprocessor
@@ -86,6 +81,7 @@ def train(language: str, config: Config):
             logger.error(f"Feature extractor initialization failed: {str(fe)}")
             raise
 
+        # initialize model trainer
         model_trainer = EnhancedModelTrainer(language, config)
         if feature_extractor:
             model_trainer.feature_extractor = feature_extractor
@@ -898,75 +894,19 @@ def handle_api_server(menu, language, config):
 
         try:
             if choice == "1":  # Start Server
-                try:
-                    menu.display_progress("Starting API server")
-                    port = config.API_CONFIG["PORT"]
+                menu.display_progress("Starting API server")
+                # Get user choice for new terminal
 
-                    # Verify port is available
-                    if is_port_in_use(port):
-                        raise RuntimeError(f"Port {port} is already in use")
+                success = start_api_server(
+                    config.API_CONFIG["HOST"], config.API_CONFIG["PORT"]
+                )
 
-                    # Ensure clean environment
-                    os.environ["PYTHONUNBUFFERED"] = "1"
-
-                    # Set correct PYTHONPATH
-                    api_path = os.path.join(project_root, "src", "api")
-                    if "PYTHONPATH" in os.environ:
-                        os.environ["PYTHONPATH"] = (
-                            f"{project_root}{os.pathsep}{api_path}{os.pathsep}{os.environ['PYTHONPATH']}"
-                        )
-                    else:
-                        os.environ["PYTHONPATH"] = (
-                            f"{project_root}{os.pathsep}{api_path}"
-                        )
-
-                    # Start server process
-                    cmd = [
-                        sys.executable,
-                        "-m",
-                        "uvicorn",
-                        "src.api.app:app",
-                        "--host",
-                        "0.0.0.0",
-                        "--port",
-                        str(port),
-                        "--reload",
-                        "--reload-dir",
-                        "src",
-                        "--log-level",
-                        "info",
-                    ]
-
-                    # Use subprocess.Popen to run in background
-                    process = subprocess.Popen(
-                        cmd,
-                        cwd=project_root,
-                        env=os.environ,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        bufsize=1,
-                        universal_newlines=True,
+                if success:
+                    menu.display_result(
+                        "API server started on http://localhost:{config.API_CONFIG['PORT']}"
                     )
-
-                    # Wait for server to start
-                    start_time = time.time()
-                    while time.time() - start_time < 10:
-                        if is_port_in_use(port):
-                            menu.display_result(
-                                True, f"API server started on http://localhost:{port}"
-                            )
-                            break
-                        if process.poll() is not None:
-                            stderr = process.stderr.read()
-                            raise RuntimeError(f"Server failed to start: {stderr}")
-                        time.sleep(0.5)
-                    else:
-                        raise TimeoutError("Server startup timed out")
-
-                except Exception as e:
-                    menu.display_result(False, f"Failed to start server: {e}")
-                    force_kill_port(port)  # Only kill the specific port
+                else:
+                    menu.display_result(False, "Failed to start server")
 
             elif choice == "2":  # Stop Server
                 menu.display_progress("Stopping API server")
@@ -1025,33 +965,35 @@ def handle_api_server(menu, language, config):
                 subchoice = menu.display_logs_menu()
                 if subchoice != "b":
                     params = {}
-                    
+
                     if subchoice in ["1", "2", "3"]:  # View logs
                         params["lines"] = menu.get_log_lines()
                         if subchoice == "2":
                             params["type"] = "init"
                         elif subchoice == "3":
                             params["type"] = "request"
-                            
+
                     elif subchoice == "4":  # Filter by path
                         params["path"] = menu.console.input("Enter path: ")
-                        
+
                     elif subchoice == "5":  # Filter by status
-                        params["status_code"] = menu.console.input("Enter status code: ")
-                        
+                        params["status_code"] = menu.console.input(
+                            "Enter status code: "
+                        )
+
                     elif subchoice == "6":  # Filter by time
                         params["since"] = menu.get_log_time()
-                        
+
                     elif subchoice == "7":  # Filter by level
                         params["level"] = menu.get_log_level()
-                        
+
                     elif subchoice == "8":  # Search logs
                         params.update(menu.get_log_search_params())
-                        
+
                     elif subchoice == "9":  # Export logs
                         params["export"] = True
                         params["output"] = menu.get_file_path("logs")
-                        
+
                     # Get and display logs
                     display_server_logs(menu, config, params)
 
@@ -1064,14 +1006,17 @@ def handle_api_server(menu, language, config):
 
             elif choice == "8":  # Open Dashboard
                 import webbrowser
+
                 port = config.API_CONFIG["PORT"]
                 webbrowser.open(f"http://localhost:{port}/dashboard")
 
             elif choice == "9":  # Export Data
                 export_path = menu.get_file_path("export")
                 data = {
-                    "metrics": get_filtered_metrics({"time_range": "7d"}),
-                    "logs": get_server_logs(lines=1000)
+                    "metrics": ModelEvaluator(language).get_filtered_metrics(
+                        {"time_range": "7d"}
+                    ),
+                    "logs": get_server_logs(config.API_CONFIG["PORT"], lines=1000),
                 }
                 with open(export_path, "w") as f:
                     json.dump(data, f, indent=2)
@@ -1079,7 +1024,7 @@ def handle_api_server(menu, language, config):
 
         except Exception as e:
             menu.display_result(False, f"Error: {str(e)}")
-            
+
         menu.wait_for_user()
 
 
@@ -1262,42 +1207,39 @@ def display_server_logs(menu, config, params=None):
             params = {}
             if subchoice == "1":  # View latest logs
                 params["lines"] = menu.get_log_lines()
-                
-            elif subchoice == "2":  # View init logs 
+
+            elif subchoice == "2":  # View init logs
                 params["type"] = "init"
                 params["lines"] = menu.get_log_lines()
-                
+
             elif subchoice == "3":  # View request logs
                 params["type"] = "request"
                 params["lines"] = menu.get_log_lines()
-                
+
             elif subchoice == "4":  # Filter by path
                 params["path"] = menu.console.input("Enter path: ")
                 params["lines"] = menu.get_log_lines()
-                
+
             elif subchoice == "5":  # Filter by status
                 params["status_code"] = int(menu.console.input("Enter status code: "))
                 params["lines"] = menu.get_log_lines()
-                
+
             elif subchoice == "6":  # Export logs
                 output_file = menu.get_file_path("logs")
-                params = {
-                    "lines": 1000,
-                    "output": output_file
-                }
+                params = {"lines": 1000, "output": output_file}
 
         try:
             # Make API request
             response = requests.get(
                 f"http://localhost:{config.API_CONFIG['PORT']}/api/logs",
-                params={k:v for k,v in params.items() if k != 'output'}
+                params={k: v for k, v in params.items() if k != "output"},
             )
 
             if response.status_code == 200:
                 logs = response.json()
-                
-                if 'output' in params:  # Export to file
-                    with open(params['output'], 'w', encoding='utf-8') as f:
+
+                if "output" in params:  # Export to file
+                    with open(params["output"], "w", encoding="utf-8") as f:
                         f.writelines(logs["logs"])
                     menu.display_result(True, f"Logs exported to {params['output']}")
                 else:  # Display in console
@@ -1314,6 +1256,18 @@ def display_server_logs(menu, config, params=None):
 
         menu.wait_for_user()
 
+
+def get_server_logs(port, lines=1000):
+    """Fetch server logs from the API"""
+    try:
+        response = requests.get(f"http://localhost:{port}/api/logs", params={"lines": lines})
+        if response.status_code == 200:
+            return response.json()["logs"]
+        else:
+            raise RuntimeError(f"Failed to get logs: {response.text}")
+    except Exception as e:
+        logger.error(f"Error fetching server logs: {e}")
+        return []
 
 def main():
     # Only cleanup when starting the program

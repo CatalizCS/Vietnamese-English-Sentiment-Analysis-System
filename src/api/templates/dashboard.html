@@ -91,10 +91,30 @@
           <div class="metric-card" id="vi-model-status">
             <div class="metric-title">Vietnamese Model</div>
             <div class="metric-value">Loading...</div>
+            <div class="metric-details">
+              <p id="vi-model-name">Name: --</p>
+              <p id="vi-model-version">Version: --</p>
+              <p id="vi-model-description">Description: --</p>
+              <p id="vi-model-loading-time">Loading Time: -- s</p>
+              <p id="vi-model-avg-inference-time">Avg Inference Time: -- ms</p>
+              <p id="vi-model-accuracy">Accuracy: --%</p>
+              <p id="vi-model-precision">Precision: --%</p>
+              <p id="vi-model-recall">Recall: --%</p>
+            </div>
           </div>
           <div class="metric-card" id="en-model-status">
             <div class="metric-title">English Model</div>
             <div class="metric-value">Loading...</div>
+            <div class="metric-details">
+              <p id="en-model-name">Name: --</p>
+              <p id="en-model-version">Version: --</p>
+              <p id="en-model-description">Description: --</p>
+              <p id="en-model-loading-time">Loading Time: -- s</p>
+              <p id="en-model-avg-inference-time">Avg Inference Time: -- ms</p>
+              <p id="en-model-accuracy">Accuracy: --%</p>
+              <p id="en-model-precision">Precision: --%</p>
+              <p id="en-model-recall">Recall: --%</p>
+            </div>
           </div>
         </div>
       </div>
@@ -103,46 +123,164 @@
     <script>
       let ws;
       let reconnectAttempts = 0;
-      const maxReconnectAttempts = 5;
       const reconnectDelay = 3000;
-      let pingInterval;
-      let connectionTimeout;
+      let heartbeatInterval;
+      let heartbeatTimeout;
 
       function handleReconnect(reason) {
-          document.getElementById("system-status").innerHTML = 
-              '<span class="text-yellow-500">●</span> Disconnected';
+        document.getElementById("system-status").innerHTML =
+          '<span class="text-yellow-500">●</span> Disconnected';
 
-          if (reconnectAttempts < maxReconnectAttempts) {
-              reconnectAttempts++;
-              console.log(`Reconnecting... Attempt ${reconnectAttempts} (${reason})`);
-              setTimeout(connectWebSocket, reconnectDelay);
-          } else {
-              document.getElementById("system-status").innerHTML = 
-                  '<span class="text-red-500">●</span> Connection Failed';
-              console.error("Max reconnection attempts reached");
-          }
+        reconnectAttempts++;
+        console.log(`Reconnecting... Attempt ${reconnectAttempts} (${reason})`);
+        setTimeout(connectWebSocket, reconnectDelay);
+      }
+
+      function sendHeartbeat() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "heartbeat" }));
+          console.log("Heartbeat sent");
+
+          // Set a timeout to wait for heartbeat acknowledgment
+          heartbeatTimeout = setTimeout(() => {
+            console.warn("Heartbeat acknowledgment not received.");
+            ws.close();
+          }, 5000); // 5 seconds timeout
+        }
+      }
+
+      function handleHeartbeatAck() {
+        if (heartbeatTimeout) {
+          clearTimeout(heartbeatTimeout);
+          console.log("Heartbeat acknowledgment received.");
+        }
       }
 
       async function connectWebSocket() {
-          try {
-              const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-              // Use window.location.host if available, otherwise default to localhost:7270
-              const host = window.location.host || 'localhost:7270';
-              const wsUrl = `${wsProtocol}//${host}/ws/metrics`;
-              
-              console.log('Connecting to WebSocket:', wsUrl);
-              
-              if (ws) {
-                  ws.close();
-                  await new Promise(resolve => setTimeout(resolve, 1000));
-              }
+        try {
+          const wsProtocol =
+            window.location.protocol === "https:" ? "wss:" : "ws:";
+          const host = window.location.host || "localhost:7270";
+          const wsUrl = `${wsProtocol}//${host}/ws/metrics`;
 
-              ws = new WebSocket(wsUrl);
-              // ...existing WebSocket event handlers...
-          } catch (error) {
-              console.error('WebSocket connection error:', error);
-              handleReconnect('Connection failed');
+          console.log("Connecting to WebSocket:", wsUrl);
+
+          if (ws) {
+            ws.close();
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           }
+
+          ws = new WebSocket(wsUrl);
+
+          ws.onopen = () => {
+            console.log("WebSocket connected");
+            document.getElementById("system-status").innerHTML =
+              '<span class="text-green-500">●</span> Connected';
+            reconnectAttempts = 0;
+            // Start sending heartbeat every 30 seconds
+            heartbeatInterval = setInterval(sendHeartbeat, 30000);
+            // Send the first heartbeat immediately
+            sendHeartbeat();
+          };
+
+          ws.onclose = (event) => {
+            console.log("WebSocket connection closed:", event);
+            document.getElementById("system-status").innerHTML =
+              '<span class="text-yellow-500">●</span> Disconnected';
+            clearInterval(heartbeatInterval); // Stop heartbeat on close
+            clearTimeout(heartbeatTimeout);
+            handleReconnect("Connection closed");
+          };
+
+          ws.onerror = (error) => {
+            console.error("WebSocket error:", error);
+            ws.close();
+          };
+
+          ws.onmessage = (event) => {
+            if (ws.readyState === WebSocket.OPEN) {
+              try {
+                const data = JSON.parse(event.data);
+
+                if (data.type === "heartbeat_ack") {
+                  handleHeartbeatAck();
+                } else if (data.type === "metrics") {
+                  const metrics = data;
+                  updateCharts(metrics);
+                  updateMetrics(metrics);
+                }
+              } catch (err) {
+                console.error("Error processing metrics:", err);
+              }
+            }
+          };
+        } catch (err) {
+          console.error("WebSocket connection failed:", err);
+          handleReconnect("Connection failed");
+        }
+      }
+
+      // Function to initialize WebSocket connection
+      connectWebSocket();
+
+      // Functions to update charts (implement as needed)
+      function updateCharts(metrics) {
+        const now = new Date();
+
+        // Update data arrays
+        for (const chart of Object.values(charts)) {
+          chart.data[0].x.push(now);
+          if (chart.data[0].x.length > MAX_POINTS) {
+            chart.data[0].x.shift();
+            chart.data[0].y.shift();
+          }
+        }
+
+        // Add new values
+        charts.cpu.data[0].y.push(metrics.cpu_usage);
+        charts.memory.data[0].y.push(metrics.memory_usage.percent);
+        charts.requests.data[0].y.push(metrics.requests_per_sec);
+        charts.response.data[0].y.push(metrics.avg_response_time);
+
+        // Update charts
+        Plotly.update("cpu-chart", charts.cpu.data, {
+          xaxis: { range: [now - 300000, now] }, // Show last 5 minutes
+        });
+        Plotly.update("memory-chart", charts.memory.data, {
+          xaxis: { range: [now - 300000, now] },
+        });
+        Plotly.update("request-rate-chart", charts.requests.data, {
+          xaxis: { range: [now - 300000, now] },
+        });
+        Plotly.update("response-time-chart", charts.response.data, {
+          xaxis: { range: [now - 300000, now] },
+        });
+
+        // Update numeric displays
+        document.getElementById("cpu-usage").textContent =
+          metrics.cpu_usage.toFixed(1);
+        document.getElementById("memory-usage").textContent =
+          metrics.memory_usage.percent.toFixed(1);
+      }
+
+      function updateMetrics(metrics) {
+        // Update basic metrics
+        document.getElementById("cpu-usage").textContent =
+          metrics.cpu_usage.toFixed(1);
+        document.getElementById("memory-usage").textContent =
+          metrics.memory_usage.percent.toFixed(1);
+
+        // Update model status
+        updateModelStatus("vi", metrics.model_status.vi);
+        updateModelStatus("en", metrics.model_status.en);
+      }
+
+      function updateModelStatus(lang, status) {
+        const element = document.getElementById(`${lang}-model-status`);
+        const statusDiv = element.querySelector(".metric-value");
+        statusDiv.innerHTML = status
+          ? '<span class="text-green-500">●</span> Active'
+          : '<span class="text-red-500">●</span> Inactive';
       }
 
       window.addEventListener("load", connectWebSocket);
@@ -166,56 +304,128 @@
         }, 3000);
       }
 
-      // Initialize charts
-      const cpuData = {
-        x: [],
-        y: [],
-        type: "line",
-        name: "CPU Usage",
-      };
-
-      const memoryData = {
-        x: [],
-        y: [],
-        type: "line",
-        name: "Memory Usage",
-      };
-
-      const requestRateData = {
-        x: [],
-        y: [],
-        type: "bar",
-        name: "Requests/sec",
-      };
-
-      const responseTimeData = {
-        x: [],
-        y: [],
-        type: "scatter",
-        mode: "lines",
-        name: "Avg Response Time",
+      // Initialize time window for charts (5 minutes of data)
+      const MAX_POINTS = 300; // 5 minutes at 1 data point per second
+      const charts = {
+        cpu: {
+          data: [
+            {
+              x: [],
+              y: [],
+              type: "line",
+              name: "CPU Usage",
+              line: { color: "#2563eb" },
+            },
+          ],
+          layout: {
+            margin: { t: 0, b: 20, l: 30, r: 10 },
+            yaxis: { range: [0, 100], title: "CPU %" },
+            showlegend: false,
+          },
+        },
+        memory: {
+          data: [
+            {
+              x: [],
+              y: [],
+              type: "line",
+              name: "Memory Usage",
+              line: { color: "#16a34a" },
+            },
+          ],
+          layout: {
+            margin: { t: 0, b: 20, l: 30, r: 10 },
+            yaxis: { range: [0, 100], title: "Memory %" },
+            showlegend: false,
+          },
+        },
+        requests: {
+          data: [
+            {
+              x: [],
+              y: [],
+              type: "bar",
+              name: "Requests/sec",
+              marker: { color: "#9333ea" },
+            },
+          ],
+          layout: {
+            margin: { t: 0, b: 30, l: 40, r: 10 },
+            yaxis: { title: "Requests/sec" },
+            showlegend: false,
+          },
+        },
+        response: {
+          data: [
+            {
+              x: [],
+              y: [],
+              type: "scatter",
+              mode: "lines",
+              name: "Response Time",
+              line: { color: "#dc2626" },
+            },
+          ],
+          layout: {
+            margin: { t: 0, b: 30, l: 40, r: 10 },
+            yaxis: { title: "Time (s)" },
+            showlegend: false,
+          },
+        },
       };
 
       // Create charts
-      Plotly.newPlot("cpu-chart", [cpuData], {
-        margin: { t: 0, b: 20, l: 30, r: 10 },
-        yaxis: { range: [0, 100] },
-      });
+      Plotly.newPlot("cpu-chart", charts.cpu.data, charts.cpu.layout);
+      Plotly.newPlot("memory-chart", charts.memory.data, charts.memory.layout);
+      Plotly.newPlot(
+        "request-rate-chart",
+        charts.requests.data,
+        charts.requests.layout
+      );
+      Plotly.newPlot(
+        "response-time-chart",
+        charts.response.data,
+        charts.response.layout
+      );
 
-      Plotly.newPlot("memory-chart", [memoryData], {
-        margin: { t: 0, b: 20, l: 30, r: 10 },
-        yaxis: { range: [0, 100] },
-      });
+      function updateCharts(metrics) {
+        const now = new Date();
 
-      Plotly.newPlot("request-rate-chart", [requestRateData], {
-        margin: { t: 0, b: 30, l: 40, r: 10 },
-        yaxis: { title: "Requests/sec" },
-      });
+        // Update data arrays
+        for (const chart of Object.values(charts)) {
+          chart.data[0].x.push(now);
+          if (chart.data[0].x.length > MAX_POINTS) {
+            chart.data[0].x.shift();
+            chart.data[0].y.shift();
+          }
+        }
 
-      Plotly.newPlot("response-time-chart", [responseTimeData], {
-        margin: { t: 0, b: 30, l: 40, r: 10 },
-        yaxis: { title: "Response Time (s)" },
-      });
+        // Add new values
+        charts.cpu.data[0].y.push(metrics.cpu_usage);
+        charts.memory.data[0].y.push(metrics.memory_usage.percent);
+        charts.requests.data[0].y.push(metrics.requests_per_sec);
+        charts.response.data[0].y.push(metrics.avg_response_time);
+
+        // Update charts
+        Plotly.update("cpu-chart", charts.cpu.data, {
+          xaxis: { range: [now - 300000, now] }, // Show last 5 minutes
+        });
+        Plotly.update("memory-chart", charts.memory.data, {
+          xaxis: { range: [now - 300000, now] },
+        });
+        Plotly.update("request-rate-chart", charts.requests.data, {
+          xaxis: { range: [now - 300000, now] },
+        });
+        Plotly.update("response-time-chart", charts.response.data, {
+          xaxis: { range: [now - 300000, now] },
+        });
+
+        // Update numeric displays
+        document.getElementById("cpu-usage").textContent =
+          metrics.cpu_usage.toFixed(1);
+        document.getElementById("memory-usage").textContent =
+          metrics.memory_usage.percent.toFixed(1);
+      }
 
       function updateMetrics(metrics) {
         // Update basic metrics
@@ -235,60 +445,6 @@
         statusDiv.innerHTML = status
           ? '<span class="text-green-500">●</span> Active'
           : '<span class="text-red-500">●</span> Inactive';
-      }
-
-      function updateCharts(metrics) {
-        const now = new Date();
-
-        // Update CPU chart
-        Plotly.extendTraces(
-          "cpu-chart",
-          {
-            x: [[now]],
-            y: [[metrics.cpu_usage]],
-          },
-          [0]
-        );
-
-        // Update memory chart
-        Plotly.extendTraces(
-          "memory-chart",
-          {
-            x: [[now]],
-            y: [[metrics.memory_usage.percent]],
-          },
-          [0]
-        );
-
-        // Update request rate chart
-        Plotly.extendTraces(
-          "request-rate-chart",
-          {
-            x: [[now]],
-            y: [[metrics.requests_per_sec]],
-          },
-          [0]
-        );
-
-        // Update response time chart
-        Plotly.extendTraces(
-          "response-time-chart",
-          {
-            x: [[now]],
-            y: [[metrics.avg_response_time]],
-          },
-          [0]
-        );
-
-        // Keep last 50 points on charts
-        const maxPoints = 50;
-        if (cpuData.x.length > maxPoints) {
-          Plotly.relayout("cpu-chart", {
-            xaxis: {
-              range: [now - 60000, now],
-            },
-          });
-        }
       }
 
       // Update uptime
@@ -312,6 +468,19 @@
       // Update total requests
       document.getElementById("total-requests").textContent =
         "{{ total_requests }}";
+
+      // Clear heartbeat on page unload
+      window.addEventListener("beforeunload", () => {
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+        }
+        if (heartbeatTimeout) {
+          clearTimeout(heartbeatTimeout);
+        }
+        if (ws) {
+          ws.close();
+        }
+      });
     </script>
   </body>
 </html>

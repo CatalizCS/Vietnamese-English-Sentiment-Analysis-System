@@ -108,8 +108,18 @@ class Config:
             'worried': ['lo', 'sợ', 'không an tâm']
         },
         'en': {
-            # Similar structure for English
-            # ...existing English keywords...
+            'happy': ['happy', 'joyful', 'pleased', 'delighted', 'good', 'great'],
+            'excited': ['excited', 'thrilled', 'eager', 'enthusiastic', 'wow'],
+            'satisfied': ['satisfied', 'content', 'pleased', 'okay', 'fine'],
+            'proud': ['proud', 'accomplished', 'successful', 'confident'],
+            'neutral': ['neutral', 'indifferent', 'unaffected', 'okay'],
+            'surprised': ['surprised', 'shocked', 'amazed', 'astonished'],
+            'confused': ['confused', 'puzzled', 'perplexed', 'baffled'],
+            'sad': ['sad', 'unhappy', 'down', 'depressed', 'miserable'],
+            'angry': ['angry', 'mad', 'furious', 'irritated', 'annoyed'],
+            'disappointed': ['disappointed', 'dissatisfied', 'unhappy', 'let down'],
+            'frustrated': ['frustrated', 'annoyed', 'irritated', 'exasperated'],
+            'worried': ['worried', 'concerned', 'anxious', 'nervous', 'apprehensive']
         }
     }
 
@@ -151,6 +161,16 @@ class Config:
         }
     }
 
+    # Metrics configuration
+    METRICS_CONFIG = {
+        "retention_days": 7,
+        "alert_thresholds": {
+            "accuracy": 0.8,
+            "precision": 0.8,
+            "recall": 0.8
+        }
+    }
+
     # Error messages
     ERROR_MESSAGES = {
         'MODEL_NOT_FOUND': 'Model not found for language {}',
@@ -160,4 +180,18 @@ class Config:
         'INVALID_LANGUAGE': 'Invalid language. Must be "vi" or "en"',
         'EMPTY_TEXT': 'Empty text provided',
         'SERVER_ERROR': 'Internal server error'
+    }
+
+    # Model information
+    MODEL_INFO = {
+        "vi": {
+            "name": "Vietnamese Sentiment Model",
+            "version": "1.0.0",
+            "description": "A model for analyzing Vietnamese sentiment.",
+        },
+        "en": {
+            "name": "English Sentiment Model",
+            "version": "1.0.0",
+            "description": "A model for analyzing English sentiment.",
+        },
     }
