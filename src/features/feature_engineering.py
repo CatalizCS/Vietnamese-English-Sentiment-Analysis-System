@@ -197,26 +197,47 @@ class FeatureExtractor:
             # Add semantic features if available
             semantic_features = self._extract_semantic_features(valid_texts)
 
-            # Ensure all feature arrays are 2D
+            # Debugging: Print shapes of individual feature arrays
+            print(f"Word features shape: {word_features.shape}")
+            print(f"Char features shape: {char_features.shape}")
+            print(f"Tfidf features shape: {tfidf_features.shape}")
+            print(f"Linguistic features shape: {linguistic_features.shape}")
+            print(f"Emotion features shape: {emotion_features.shape}")
+            if semantic_features is not None:
+                print(f"Semantic features shape: {semantic_features.shape}")
+
+            # Ensure all feature arrays are 2D and have consistent sample size
             features_list = [
-                word_features, 
-                char_features, 
+                word_features,
+                char_features,
                 tfidf_features,
                 linguistic_features,
-                emotion_features
+                emotion_features,
             ]
 
-            # Add semantic features if available
             if semantic_features is not None:
                 features_list.append(semantic_features)
 
-            # Validate feature dimensions
+            num_samples = len(valid_texts)
             for i, feat in enumerate(features_list):
+                # Check if feature array is None
+                if feat is None:
+                    raise ValueError(f"Feature array at index {i} is None")
+
+                # Ensure feature arrays are 2D
                 if feat.ndim == 1:
-                    features_list[i] = feat.reshape(-1, 1)
+                    feat = feat.reshape(-1, 1)
+                    features_list[i] = feat
+
+                # Check if the number of samples matches
+                if feat.shape[0] != num_samples:
+                    raise ValueError(
+                        f"Feature array at index {i} has inconsistent number of samples. Expected {num_samples}, got {feat.shape[0]}"
+                    )
 
             # Combine all features
             all_features = np.hstack(features_list)
+            print(f"All features shape after hstack: {all_features.shape}")
 
             # Scale features
             if not self.is_fitted:

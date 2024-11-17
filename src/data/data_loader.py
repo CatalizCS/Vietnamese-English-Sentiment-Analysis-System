@@ -69,7 +69,7 @@ class DataLoader:
                 self.logger.warning("No valid data after validation")
                 return pd.DataFrame(columns=required_cols)
             
-            self.logger.info(f"Valid samples after validation: {len(df)}")
+            self.logger.info(f"Valid samples after validation: {df.shape[0]}")
             return df[required_cols]
             
         except Exception as e:

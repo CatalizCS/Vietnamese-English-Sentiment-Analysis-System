@@ -70,57 +70,38 @@ class EnhancedModelTrainer:
         }
 
     def create_ensemble_model(self):
-        """Creates an enhanced ensemble of models"""
-        # Initialize pipelines with improved configurations
-        rf_pipeline = Pipeline(
-            [
-                ("scaler", MinMaxScaler()),
-                (
-                    "feature_selection",
-                    SelectFromModel(
-                        estimator=RandomForestClassifier(
-                            n_estimators=100, random_state=42
-                        )
-                    ),
-                ),
-                (
-                    "rf",
-                    RandomForestClassifier(
-                        random_state=42,
-                        n_jobs=-1,
-                        # Remove warm_start and class_weight from here
-                        bootstrap=True,
-                        criterion="entropy",
-                    ),
-                ),
-            ]
-        )
+        """Create simplified model ensemble with core models only"""
+        from sklearn.ensemble import RandomForestClassifier
+        from lightgbm import LGBMClassifier
 
-        svm_pipeline = Pipeline(
-            [
+        # Simplified model configurations
+        models = [
+            ("rf", Pipeline([
                 ("scaler", MinMaxScaler()),
-                ("feature_selection", SelectKBest(score_func=mutual_info_classif)),
-                (
-                    "svm",
-                    LinearSVC(
-                        random_state=42,
-                        dual=False,
-                        class_weight="balanced",
-                        max_iter=5000,
-                    ),
-                ),
-            ]
-        )
-
-        nb_pipeline = Pipeline(
-            [
+                ("rf", RandomForestClassifier(
+                    n_estimators=100,
+                    max_depth=10,
+                    n_jobs=-1,
+                    random_state=42,
+                    class_weight='balanced'
+                )),
+            ])),
+            ("lgbm", Pipeline([
                 ("scaler", MinMaxScaler()),
-                ("feature_selection", SelectKBest(score_func=mutual_info_classif)),
-                ("nb", MultinomialNB(fit_prior=True)),
-            ]
-        )
-
-        return [("rf", rf_pipeline), ("svm", svm_pipeline), ("nb", nb_pipeline)]
+                ("lgbm", LGBMClassifier(
+                    n_estimators=100,
+                    num_leaves=31,
+                    learning_rate=0.1,
+                    max_depth=10,
+                    device="cpu",
+                    objective='multiclass',
+                    metric='multi_logloss',
+                    num_class=3,
+                    verbose=-1
+                )),
+            ])),
+        ]
+        return models
 
     def save_checkpoint(self, model, metrics, epoch=None):
         """Save training checkpoint"""
@@ -287,134 +268,61 @@ class EnhancedModelTrainer:
             print(traceback.format_exc())
 
     def train_with_grid_search(self, X_train, y_train):
-        """Enhanced training with better optimization"""
+        """Simplified training process"""
         start_time = datetime.now()
         self.logger.info("Starting model training...")
 
         try:
-            # Initialize feature extractor if not set
+            # Basic feature extraction
             if self.feature_extractor is None:
                 from src.features.feature_engineering import FeatureExtractor
-
                 self.feature_extractor = FeatureExtractor(self.language, self.config)
-                if self.feature_extractor is None:
-                    raise ValueError("Failed to initialize feature extractor")
 
-            # Extract features with validation
+            # Extract and validate features
             X_train_features = self.feature_extractor.extract_features(X_train)
             if X_train_features is None or X_train_features.shape[0] == 0:
-                raise ValueError(
-                    "Feature extraction failed - empty or None features returned"
-                )
+                raise ValueError("Feature extraction failed")
 
-            self.logger.info(f"Extracted features shape: {X_train_features.shape}")
+            # Simple parameter grid
+            self.param_grid = {
+                "rf__n_estimators": [100],
+                "rf__max_depth": [10],
+                "lgbm__n_estimators": [100],
+                "lgbm__num_leaves": [31]
+            }
 
-            # Add additional preprocessing steps
-            from sklearn.preprocessing import StandardScaler
-            from imblearn.over_sampling import SMOTE
-            from imblearn.pipeline import Pipeline as ImbPipeline
+            # Basic cross-validation
+            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
 
-            # Apply SMOTE for balanced classes
-            smote = SMOTE(random_state=42)
-            X_train_balanced, y_train_balanced = smote.fit_resample(
-                X_train_features, y_train
-            )
-
-            # Create models with better configurations
+            # Train models
             models = self.create_ensemble_model()
             best_models = {}
             best_metrics = {}
 
-            # Optimized cross-validation
-            cv = StratifiedKFold(
-                n_splits=5,  # 5-fold CV for better balance
-                shuffle=True,
-                random_state=42,
-            )
-
-            # Calculate balanced sample weights once
-            sample_weights = compute_sample_weight("balanced", y_train)
-
-            # Calculate class weights once for all models
-            classes = np.unique(y_train)
-            class_weights = compute_class_weight(
-                class_weight="balanced", classes=classes, y=y_train
-            )
-            class_weight_dict = dict(zip(classes, class_weights))
-
-            # Configure better scoring metrics
-            scorers = {
-                "f1": make_scorer(f1_score, average="weighted", zero_division=1),
-                "precision": make_scorer(
-                    precision_score, average="weighted", zero_division=1
-                ),
-                "recall": make_scorer(
-                    recall_score, average="weighted", zero_division=1
-                ),
-                "balanced_accuracy": make_scorer(balanced_accuracy_score),
-                "roc_auc": make_scorer(roc_auc_score, multi_class="ovr"),
-            }
-
-            # Train each model with optimized parameters
             for name, pipeline in models:
                 try:
                     self.logger.info(f"\nTraining {name} model...")
-
-                    # Modify param grid to include sample weight parameter for RF and SVM
-                    model_params = {
-                        k: v for k, v in self.param_grid.items() if k.startswith(name)
-                    }
-
-                    # Add class weight as a fixed parameter
-                    if name == "rf":
-                        pipeline.named_steps["rf"].set_params(
-                            class_weight=class_weight_dict
-                        )
-                        fit_params = {"rf__sample_weight": sample_weights}
-                    elif name == "svm":
-                        pipeline.named_steps["svm"].set_params(
-                            class_weight=class_weight_dict
-                        )
-                        fit_params = {"svm__sample_weight": sample_weights}
-                    else:
-                        fit_params = {}
-
-                    # Configure GridSearchCV with proper scoring metrics
+                    
+                    # Simple grid search
                     grid_search = GridSearchCV(
                         pipeline,
-                        param_grid=model_params,
+                        {k: v for k, v in self.param_grid.items() if k.startswith(name)},
                         cv=cv,
-                        scoring=scorers,  # Use custom scorers
-                        refit="balanced_accuracy",  # Use balanced accuracy for selection
                         n_jobs=-1,
-                        verbose=1,
-                        error_score="raise",
-                        return_train_score=True,  # Get training scores
+                        verbose=1
                     )
 
-                    # Fit with appropriate parameters
-                    with warnings.catch_warnings():
-                        warnings.filterwarnings("ignore", category=Warning)
-                        if fit_params:
-                            grid_search.fit(X_train_features, y_train, **fit_params)
-                        else:
-                            grid_search.fit(X_train_features, y_train)
+                    # Train model
+                    grid_search.fit(X_train_features, y_train)
 
-                    # Track metrics
-                    model_time = (datetime.now() - start_time).total_seconds()
-                    metrics = {
+                    # Save best model and metrics
+                    best_models[name] = grid_search.best_estimator_
+                    best_metrics[name] = {
                         "best_score": grid_search.best_score_,
-                        "best_params": grid_search.best_params_,
-                        "cv_results": grid_search.cv_results_,
-                        "training_time": model_time,
+                        "training_time": (datetime.now() - start_time).total_seconds()
                     }
 
-                    self.save_checkpoint(grid_search.best_estimator_, metrics, name)
-                    best_models[name] = grid_search.best_estimator_
-                    best_metrics[name] = metrics
-
-                    self.logger.info(f"{name} Results:")
-                    self.logger.info(f"Best score: {grid_search.best_score_:.4f}")
+                    self.logger.info(f"{name} Best score: {grid_search.best_score_:.4f}")
 
                 except Exception as e:
                     self.logger.error(f"Error training {name}: {str(e)}")
@@ -426,7 +334,7 @@ class EnhancedModelTrainer:
             # Save final model
             final_metrics = {
                 "models": best_metrics,
-                "total_time": (datetime.now() - start_time).total_seconds(),
+                "total_time": (datetime.now() - start_time).total_seconds()
             }
             self.save_final_model(best_models, final_metrics)
 
