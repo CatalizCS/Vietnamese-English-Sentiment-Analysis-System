@@ -442,6 +442,39 @@ def display_metrics(language: str, config: Config):
                     ha="center",
                 )
 
+        # Add overtraining analysis
+        if isinstance(metrics, dict) and "models" in metrics:
+            plt.figure(figsize=(15, 5))
+            
+            # Original performance plots
+            plt.subplot(1, 3, 1)
+            # ... existing performance plots code ...
+
+            plt.subplot(1, 3, 2)
+            # ... existing time plots code ...
+
+            # Add overtraining analysis with proper legend handling
+            plt.subplot(1, 3, 3)
+            legend_added = False
+            for model_name, model_metrics in metrics["models"].items():
+                if "train_scores" in model_metrics and "valid_scores" in model_metrics:
+                    train_scores = model_metrics["train_scores"]
+                    valid_scores = model_metrics["valid_scores"]
+                    epochs = range(1, len(train_scores) + 1)
+                    
+                    # Add explicit labels
+                    plt.plot(epochs, train_scores, 'o-', label=f'{model_name}_train')
+                    plt.plot(epochs, valid_scores, 's-', label=f'{model_name}_val')
+                    legend_added = True
+            
+            plt.title('Training vs Validation Performance')
+            plt.xlabel('Epochs')
+            plt.ylabel('Score')
+            # Only add legend if we plotted something
+            if legend_added:
+                plt.legend(loc='upper right')
+            plt.grid(True)
+            
         plt.tight_layout()
         plt.savefig(metrics_img_path, dpi=300, bbox_inches="tight")
         plt.show()

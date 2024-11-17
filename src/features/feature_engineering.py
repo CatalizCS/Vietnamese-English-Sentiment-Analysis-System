@@ -40,33 +40,39 @@ class FeatureExtractor:
             raise
 
     def _initialize_base_extractors(self):
-        """Initialize basic extractors regardless of model existence"""
+        """Initialize feature extractors with documented parameters"""
+        
+        # TF-IDF vectorizer 
         self.tfidf = TfidfVectorizer(
-            max_features=min(self.config.MAX_FEATURES, 2000),  # Increased features
-            ngram_range=(1, 3),  # Added trigrams
-            min_df=2,  # Increased min_df
-            max_df=0.95,  # Adjusted max_df
-            strip_accents="unicode",
-            token_pattern=r"(?u)\b\w+\b",
-            lowercase=True,
-        )
-
-        # Initialize word and character vectorizers
-        self.word_vectorizer = TfidfVectorizer(
-            max_features=2000,  # Increased features
-            ngram_range=(1, 3),  # Added trigrams
+            max_features=2000,
+            ngram_range=(1,3),
             min_df=2,
             max_df=0.95,
-            strip_accents="unicode",
-            token_pattern=r"(?u)\b\w+\b",
-            lowercase=True,
+            strip_accents='unicode',
+            token_pattern=r'(?u)\b\w+\b',
+            lowercase=True
+        )
+
+        # SVD for dimensionality reduction
+        self.svd = TruncatedSVD(n_components=None)
+
+        # Word and character level vectorizers 
+        self.word_vectorizer = TfidfVectorizer(
+            max_features=2000,
+            ngram_range=(1,3),
+            min_df=2,
+            max_df=0.95,
+            strip_accents='unicode',
+            token_pattern=r'(?u)\b\w+\b',
+            lowercase=True
         )
 
         self.char_vectorizer = TfidfVectorizer(
-            analyzer="char", ngram_range=(2, 4), max_features=500, min_df=1, max_df=1.0
+            analyzer="char",
+            ngram_range=(2,4), 
+            max_features=500
         )
 
-        self.svd = None  # Will be initialized during feature extraction
         self.scaler = MinMaxScaler()
 
     def _initialize_extractors(self):
@@ -260,30 +266,18 @@ class FeatureExtractor:
             raise
 
     def _extract_and_scale_features(self, tfidf_features, texts):
-        # Calculate optimal number of components
-        max_components = min(
-            100,  # Maximum desired components
-            tfidf_features.shape[1],  # Available features
-            len(texts) - 1,  # Number of samples - 1
-            self.config.MAX_FEATURES,  # Config limit
+        """Extract and scale features using SVD"""
+        n_components = min(
+            tfidf_features.shape[1]-1,
+            len(texts)-1,
+            self.config.MAX_FEATURES
         )
-
-        if self.svd.n_components != max_components:
-            self.svd = TruncatedSVD(n_components=max_components)
-
-        # Reduce dimensionality with SVD
-        n_components = min(100, tfidf_features.shape[1], len(texts) - 1)
         self.svd.n_components = n_components
+        
         svd_features = self.svd.fit_transform(tfidf_features)
-
-        # Scale SVD features to [0,1] range
-        svd_features = self.scaler.fit_transform(svd_features)
-
-        # Get statistical features
-        stat_features = self._extract_statistical_features(texts)
-
-        # Combine features
-        return np.hstack([svd_features, stat_features])
+        scaled_features = self.scaler.fit_transform(svd_features)
+        
+        return scaled_features
 
     def _extract_statistical_features(self, texts):
         """Enhanced statistical features for better sentiment detection"""

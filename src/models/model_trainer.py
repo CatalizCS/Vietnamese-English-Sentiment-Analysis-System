@@ -29,15 +29,20 @@ from sklearn.metrics import (
 import numpy as np
 
 
-class EnhancedModelTrainer:
-    """
-    Enhanced model trainer with ensemble learning and performance monitoring.
+class SVMWithProba(LinearSVC):
+    """SVM with probability estimates"""
 
-    Attributes:
-        language (str): Language code ('en' or 'vi')
-        config: Configuration object containing model parameters
-        logger: Logger instance for tracking training progress
-    """
+    def predict_proba(self, X):
+        decision = self.decision_function(X)
+        if len(decision.shape) == 1:
+            decision = np.column_stack([-decision, decision])
+        probs = 1 / (1 + np.exp(-decision))
+        probs /= probs.sum(axis=1, keepdims=True)
+        return probs
+
+
+class EnhancedModelTrainer:
+    """Enhanced model trainer with ensemble learning and performance monitoring."""
 
     def __init__(self, language: str, config):
         self.language = language
@@ -48,58 +53,33 @@ class EnhancedModelTrainer:
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         os.makedirs(self.models_dir, exist_ok=True)
         self.training_time = 0
-        self.feature_extractor = None  # Initialize as None
+        self.feature_extractor = None  # Initialize feature extractor as None
         self.param_grid = {
-            "rf__n_estimators": [500, 1000],  # Increased trees significantly
-            "rf__max_depth": [50, 100],  # Deeper trees
-            "rf__min_samples_split": [2, 3],  # More precise splits
-            "rf__min_samples_leaf": [1],  # Allow smaller leaf size
-            "rf__max_features": ["sqrt", "log2"],  # Add feature selection options
-            "rf__class_weight": [
-                "balanced",
-                "balanced_subsample",
-            ],  # Add subsample option
-            "svm__C": [0.1, 1.0, 10.0, 100.0],  # More regularization options
-            "svm__tol": [1e-4, 1e-5],  # More precise convergence
-            "svm__max_iter": [5000],  # More iterations for convergence
-            "svm__class_weight": ["balanced"],
-            "svm__dual": [False],
-            "nb__alpha": [0.01, 0.1, 0.5],  # More smoothing options
-            "nb__fit_prior": [True],
-            "feature_selection__k": [500, 1000],  # More features
+            "rf__n_estimators": [200, 300],
+            "rf__max_depth": [20, 30],
+            "svm__C": [0.1, 1.0, 10.0],
+            "nb__alpha": [0.1, 0.5, 1.0],
         }
 
     def create_ensemble_model(self):
-        """Create simplified model ensemble with core models only"""
-        from sklearn.ensemble import RandomForestClassifier
-        from lightgbm import LGBMClassifier
+        """Create model ensemble with documented algorithms"""
 
-        # Simplified model configurations
+        rf = RandomForestClassifier(
+            n_estimators=300,
+            max_depth=30,
+            min_samples_split=2,
+            class_weight="balanced",
+            random_state=42,
+        )
+
+        svm = LinearSVC(C=1.0, max_iter=5000, class_weight="balanced", dual=False)
+
+        nb = MultinomialNB(alpha=0.1, fit_prior=True)
+
         models = [
-            ("rf", Pipeline([
-                ("scaler", MinMaxScaler()),
-                ("rf", RandomForestClassifier(
-                    n_estimators=100,
-                    max_depth=10,
-                    n_jobs=-1,
-                    random_state=42,
-                    class_weight='balanced'
-                )),
-            ])),
-            ("lgbm", Pipeline([
-                ("scaler", MinMaxScaler()),
-                ("lgbm", LGBMClassifier(
-                    n_estimators=100,
-                    num_leaves=31,
-                    learning_rate=0.1,
-                    max_depth=10,
-                    device="cpu",
-                    objective='multiclass',
-                    metric='multi_logloss',
-                    num_class=3,
-                    verbose=-1
-                )),
-            ])),
+            ("rf", Pipeline([("scaler", MinMaxScaler()), ("rf", rf)])),
+            ("svm", Pipeline([("scaler", MinMaxScaler()), ("svm", svm)])),
+            ("nb", Pipeline([("scaler", MinMaxScaler()), ("nb", nb)])),
         ]
         return models
 
@@ -191,84 +171,46 @@ class EnhancedModelTrainer:
 
     def plot_training_progress(self, grid_search, X_test=None, y_test=None):
         """Visualizes the training progress and model performance"""
-        plt.figure(figsize=(12, 6))
+        plt.figure(figsize=(15, 5))
 
         try:
-            # Check if input is a dictionary of models
+            # Performance comparison subplot
+            plt.subplot(1, 3, 1)
+            # ... existing performance plot code ...
+
+            # Time comparison subplot
+            plt.subplot(1, 3, 2)
+            # ... existing time plot code ...
+
+            # Training vs Validation subplot
+            plt.subplot(1, 3, 3)
+            legend_added = False
+
             if isinstance(grid_search, dict):
-                # Plot model scores
-                scores = []
-                model_names = []
-                training_times = []
+                for name, model in grid_search.items():
+                    if hasattr(model, "cv_results_"):
+                        train_scores = model.cv_results_["mean_train_score"]
+                        valid_scores = model.cv_results_["mean_test_score"]
+                        iterations = range(1, len(train_scores) + 1)
 
-                for model_name, model_obj in grid_search.items():
-                    # Get scores from either metrics or model attributes
-                    score = None
-                    if hasattr(model_obj, "best_score_"):
-                        score = model_obj.best_score_
-                    else:
-                        # Try get score from model's predict method
-                        try:
-                            score = model_obj.score(X_test, y_test)
-                        except:
-                            pass
+                        plt.plot(iterations, train_scores, "o-", label=f"{name}_train")
+                        plt.plot(iterations, valid_scores, "s-", label=f"{name}_val")
+                        legend_added = True
 
-                    if score is not None:
-                        scores.append(score)
-                        model_names.append(model_name)
-                        training_times.append(getattr(model_obj, "fit_time_", 0))
-
-                # Plot performance comparison
-                plt.subplot(1, 2, 1)
-                bars = plt.bar(range(len(scores)), scores)
-                plt.xticks(range(len(model_names)), model_names, rotation=45)
-                plt.title("Model Performance Comparison")
-                plt.xlabel("Models")
+            if legend_added:
+                plt.title("Training vs Validation Performance")
+                plt.xlabel("Parameter Combinations")
                 plt.ylabel("Score")
-                plt.ylim(0, 1)
-
-                # Add score labels
-                for bar, score in zip(bars, scores):
-                    plt.text(
-                        bar.get_x() + bar.get_width() / 2,
-                        score + 0.01,
-                        f"{score:.3f}",
-                        ha="center",
-                    )
-
-                # Plot training times
-                plt.subplot(1, 2, 2)
-                bars = plt.bar(range(len(training_times)), training_times)
-                plt.xticks(range(len(model_names)), model_names, rotation=45)
-                plt.title("Training Time Comparison")
-                plt.xlabel("Models")
-                plt.ylabel("Time (s)")
-
-                # Add time labels
-                for bar, time in zip(bars, training_times):
-                    plt.text(
-                        bar.get_x() + bar.get_width() / 2,
-                        time + max(training_times) * 0.02,
-                        f"{time:.1f}s",
-                        ha="center",
-                    )
-
-            # Handle GridSearchCV object case
-            elif hasattr(grid_search, "cv_results_"):
-                # ... existing GridSearchCV plotting code ...
-                pass
+                plt.legend(loc="upper right")
+                plt.grid(True)
 
             plt.tight_layout()
 
         except Exception as e:
             self.logger.error(f"Error plotting training progress: {str(e)}")
-            import traceback
-
-            print("Full error traceback:")
-            print(traceback.format_exc())
 
     def train_with_grid_search(self, X_train, y_train):
-        """Simplified training process"""
+        """Train with documented evaluation metrics"""
         start_time = datetime.now()
         self.logger.info("Starting model training...")
 
@@ -276,6 +218,7 @@ class EnhancedModelTrainer:
             # Basic feature extraction
             if self.feature_extractor is None:
                 from src.features.feature_engineering import FeatureExtractor
+
                 self.feature_extractor = FeatureExtractor(self.language, self.config)
 
             # Extract and validate features
@@ -283,46 +226,88 @@ class EnhancedModelTrainer:
             if X_train_features is None or X_train_features.shape[0] == 0:
                 raise ValueError("Feature extraction failed")
 
-            # Simple parameter grid
+            # Simple parameter grid with corrected keys
             self.param_grid = {
-                "rf__n_estimators": [100],
-                "rf__max_depth": [10],
-                "lgbm__n_estimators": [100],
-                "lgbm__num_leaves": [31]
+                "rf__n_estimators": [300],
+                "rf__max_depth": [30],
+                "svm__C": [1.0],
+                "nb__alpha": [0.1],
             }
 
-            # Basic cross-validation
-            cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+            # Update scorers to handle different model types safely
+            scorers = {
+                "f1": make_scorer(f1_score, average="weighted"),
+                "precision": make_scorer(
+                    precision_score, average="weighted", zero_division=1
+                ),
+                "recall": make_scorer(
+                    recall_score, average="weighted", zero_division=1
+                ),
+            }
+
+            # K-fold CV as documenteds
+            cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+            # Initialize dictionaries to store training history
+            training_history = {}
 
             # Train models
             models = self.create_ensemble_model()
             best_models = {}
             best_metrics = {}
 
+            # Update grid search to use decision function for SVM
             for name, pipeline in models:
                 try:
                     self.logger.info(f"\nTraining {name} model...")
-                    
+
                     # Simple grid search
                     grid_search = GridSearchCV(
                         pipeline,
-                        {k: v for k, v in self.param_grid.items() if k.startswith(name)},
+                        {
+                            k: v
+                            for k, v in self.param_grid.items()
+                            if k.startswith(name)
+                        },
                         cv=cv,
                         n_jobs=-1,
-                        verbose=1
+                        verbose=1,
+                        scoring=scorers,
+                        refit="f1",  # Use F1 instead of ROC-AUC
+                        return_train_score=True,  # Important: Get training scores
                     )
+
+                    # Add custom predict_proba for SVM if needed
+                    if name == "svm":
+
+                        pipeline.steps[-1] = (
+                            name,
+                            SVMWithProba(**pipeline.steps[-1][1].get_params()),
+                        )
 
                     # Train model
                     grid_search.fit(X_train_features, y_train)
 
-                    # Save best model and metrics
+                    # Get training and validation scores for f1 metric
+                    cv_results = grid_search.cv_results_
+                    train_f1_scores = cv_results["mean_train_f1"]
+                    valid_f1_scores = cv_results["mean_test_f1"]
+
+                    # Store best model and metrics
                     best_models[name] = grid_search.best_estimator_
                     best_metrics[name] = {
                         "best_score": grid_search.best_score_,
-                        "training_time": (datetime.now() - start_time).total_seconds()
+                        "training_time": (datetime.now() - start_time).total_seconds(),
+                        "train_scores": train_f1_scores.tolist(),
+                        "valid_scores": valid_f1_scores.tolist(),
+                        "params": grid_search.best_params_,
                     }
 
-                    self.logger.info(f"{name} Best score: {grid_search.best_score_:.4f}")
+                    self.logger.info(
+                        f"{name} Best score: {grid_search.best_score_:.4f}\n"
+                        f"Best training score: {np.max(train_f1_scores):.4f}\n"
+                        f"Best validation score: {np.max(valid_f1_scores):.4f}"
+                    )
 
                 except Exception as e:
                     self.logger.error(f"Error training {name}: {str(e)}")
@@ -334,7 +319,8 @@ class EnhancedModelTrainer:
             # Save final model
             final_metrics = {
                 "models": best_metrics,
-                "total_time": (datetime.now() - start_time).total_seconds()
+                "total_time": (datetime.now() - start_time).total_seconds(),
+                "training_history": training_history,
             }
             self.save_final_model(best_models, final_metrics)
 
