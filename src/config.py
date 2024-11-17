@@ -10,6 +10,7 @@ class Config:
     MAX_FEATURES = 10000  # tránh noise
     MIN_SAMPLES = 5  # đảm bảo tính ổn định
     MAX_LEN = 300  # giảm noise
+    SVD_COMPONENTS = 100  # Add this line to define the number of SVD components
     # Language specific configs
     LANGUAGE_CONFIGS = {
         "vi": {

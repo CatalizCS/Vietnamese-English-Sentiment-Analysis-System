@@ -8,6 +8,18 @@ import atexit
 from typing import Dict, Any
 from src.utils.server_utils import ConnectionManager
 from src.utils.logger import Logger
+import collections
+
+def _convert_deque_to_list(obj):
+    """Recursively convert deque objects to lists in the given object."""
+    if isinstance(obj, collections.deque):
+        return list(obj)
+    elif isinstance(obj, dict):
+        return {k: _convert_deque_to_list(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [_convert_deque_to_list(v) for v in obj]
+    else:
+        return obj
 
 class MetricsStore:
     _instance = None
@@ -101,18 +113,9 @@ class MetricsStore:
     def _save_metrics(self):
         """Save metrics to file"""
         try:
+            metrics_to_save = _convert_deque_to_list(self._data)
             with open(self._file_path, 'w') as f:
-                # Convert deques to lists for JSON serialization
-                data = {
-                    "requests": list(self._data['requests']),
-                    "response_times": list(self._data['response_times']),
-                    "errors": list(self._data['errors']),
-                    "start_time": self._data['start_time'],
-                    "total_requests": self._data['total_requests'],
-                    "total_errors": self._data['total_errors'],
-                    "model_performance": self._data['model_performance']
-                }
-                json.dump(data, f)
+                json.dump(metrics_to_save, f)
         except Exception as e:
             self.logger.error(f"Error saving metrics: {e}")
 

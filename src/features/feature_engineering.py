@@ -1,24 +1,27 @@
+import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.decomposition import TruncatedSVD
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from src.config import Config
+from src.utils.logger import Logger
 import numpy as np
-import pandas as pd
 import os
 import joblib
 import re
 
 
 class FeatureExtractor:
-    def __init__(self, language: str, config):
+    def __init__(self, language: str, config: Config):
         try:
             self.language = language
             self.config = config
             self.is_fitted = False
+            self.logger = Logger(__name__).logger
 
             # Initialize all required attributes
-            self.tfidf = None
-            self.svd = None
-            self.scaler = None
+            self.tfidf = TfidfVectorizer(max_features=config.MAX_FEATURES)
+            self.svd = TruncatedSVD(n_components=config.SVD_COMPONENTS) 
+            self.scaler = StandardScaler()
             self.feature_dims = None
             self.vocabulary = None
             self.n_features = None
@@ -39,38 +42,40 @@ class FeatureExtractor:
             print(f"Error initializing FeatureExtractor: {str(e)}")
             raise
 
+    def preprocess_text(self, text: str):
+        # Implement text preprocessing logic
+        return text
+
     def _initialize_base_extractors(self):
         """Initialize feature extractors with documented parameters"""
-        
-        # TF-IDF vectorizer 
+
+        # TF-IDF vectorizer
         self.tfidf = TfidfVectorizer(
             max_features=2000,
-            ngram_range=(1,3),
+            ngram_range=(1, 3),
             min_df=2,
             max_df=0.95,
-            strip_accents='unicode',
-            token_pattern=r'(?u)\b\w+\b',
-            lowercase=True
+            strip_accents="unicode",
+            token_pattern=r"(?u)\b\w+\b",
+            lowercase=True,
         )
 
         # SVD for dimensionality reduction
         self.svd = TruncatedSVD(n_components=None)
 
-        # Word and character level vectorizers 
+        # Word and character level vectorizers
         self.word_vectorizer = TfidfVectorizer(
             max_features=2000,
-            ngram_range=(1,3),
+            ngram_range=(1, 3),
             min_df=2,
             max_df=0.95,
-            strip_accents='unicode',
-            token_pattern=r'(?u)\b\w+\b',
-            lowercase=True
+            strip_accents="unicode",
+            token_pattern=r"(?u)\b\w+\b",
+            lowercase=True,
         )
 
         self.char_vectorizer = TfidfVectorizer(
-            analyzer="char",
-            ngram_range=(2,4), 
-            max_features=500
+            analyzer="char", ngram_range=(2, 4), max_features=500
         )
 
         self.scaler = MinMaxScaler()
@@ -257,9 +262,10 @@ class FeatureExtractor:
         except Exception as e:
             print(f"Feature extraction failed: {str(e)}")
             print(f"Debug info - Input size: {len(texts)}")
-            print(f"Debug info - Features shape: {[f.shape for f in features_list if f is not None]}")
             print(
-                f"Debug info - Is fitted: {self.is_fitted}")
+                f"Debug info - Features shape: {[f.shape for f in features_list if f is not None]}"
+            )
+            print(f"Debug info - Is fitted: {self.is_fitted}")
             print(
                 f"Debug info - Vectorizers: word={self.word_vectorizer is not None}, char={self.char_vectorizer is not None}"
             )
@@ -268,15 +274,13 @@ class FeatureExtractor:
     def _extract_and_scale_features(self, tfidf_features, texts):
         """Extract and scale features using SVD"""
         n_components = min(
-            tfidf_features.shape[1]-1,
-            len(texts)-1,
-            self.config.MAX_FEATURES
+            tfidf_features.shape[1] - 1, len(texts) - 1, self.config.MAX_FEATURES
         )
         self.svd.n_components = n_components
-        
+
         svd_features = self.svd.fit_transform(tfidf_features)
         scaled_features = self.scaler.fit_transform(svd_features)
-        
+
         return scaled_features
 
     def _extract_statistical_features(self, texts):
@@ -368,25 +372,28 @@ class FeatureExtractor:
         for text in texts:
             text = str(text)
             words = text.split()
-            
+
             # Syntactic features
-            sentence_count = len([s for s in text.split('.') if len(s.strip()) > 0])
+            sentence_count = len([s for s in text.split(".") if len(s.strip()) > 0])
             avg_words_per_sentence = len(words) / max(sentence_count, 1)
             avg_word_length = sum(len(w) for w in words) / max(len(words), 1)
-            
+
             # Basic features
-            punctuation_ratio = sum(c in '.,!?;:' for c in text) / max(len(text), 1)
+            punctuation_ratio = sum(c in ".,!?;:" for c in text) / max(len(text), 1)
             capital_ratio = sum(c.isupper() for c in text) / max(len(text), 1)
-            
+
             # Stop words ratio
             stop_words = self.config.LANGUAGE_CONFIGS[self.language]["stop_words"]
             if isinstance(stop_words, str) and stop_words == "english":
                 from nltk.corpus import stopwords
-                stop_words = set(stopwords.words('english'))
+
+                stop_words = set(stopwords.words("english"))
             else:
                 stop_words = set(stop_words)
-            stop_word_ratio = sum(w.lower() in stop_words for w in words) / max(len(words), 1)
-            
+            stop_word_ratio = sum(w.lower() in stop_words for w in words) / max(
+                len(words), 1
+            )
+
             # Combine basic features
             feature_vector = [
                 sentence_count,
@@ -394,11 +401,11 @@ class FeatureExtractor:
                 avg_word_length,
                 punctuation_ratio,
                 capital_ratio,
-                stop_word_ratio
+                stop_word_ratio,
             ]
-            
+
             features.append(feature_vector)
-            
+
         return np.array(features, dtype=np.float32)
 
     def _extract_emotion_features(self, texts):
@@ -407,56 +414,60 @@ class FeatureExtractor:
         for text in texts:
             text = str(text).lower()
             words = text.split()
-            
+
             # Get emotion keywords for current language
             emotion_keywords = self.config.EMOTION_KEYWORDS.get(self.language, {})
-            
+
             # Calculate emotion scores
             emotion_scores = []
-            for emotion, keywords in sorted(emotion_keywords.items()):  # Sort for consistent order
+            for emotion, keywords in sorted(
+                emotion_keywords.items()
+            ):  # Sort for consistent order
                 score = sum(1 for word in words if word in keywords)
                 emotion_scores.append(score / max(len(words), 1))
-            
+
             # Additional emotion indicators
-            exclamation_ratio = text.count('!') / max(len(text), 1)
-            question_ratio = text.count('?') / max(len(text), 1)
-            emoji_ratio = len(re.findall(r'[\U0001F300-\U0001F9FF]', text)) / max(len(text), 1)
-            
+            exclamation_ratio = text.count("!") / max(len(text), 1)
+            question_ratio = text.count("?") / max(len(text), 1)
+            emoji_ratio = len(re.findall(r"[\U0001F300-\U0001F9FF]", text)) / max(
+                len(text), 1
+            )
+
             # Combine all emotion features
             feature_vector = [
                 *emotion_scores,
                 exclamation_ratio,
                 question_ratio,
-                emoji_ratio
+                emoji_ratio,
             ]
             features.append(feature_vector)
-            
+
         return np.array(features, dtype=np.float32)
 
     def _extract_semantic_features(self, texts):
         """Extract semantic features from texts if available"""
-        if not hasattr(self, 'word_vectors'):
+        if not hasattr(self, "word_vectors"):
             return None
-            
-        vector_size = getattr(self.word_vectors, 'vector_size', 100)
+
+        vector_size = getattr(self.word_vectors, "vector_size", 100)
         features = []
-        
+
         for text in texts:
             words = str(text).lower().split()
             word_vectors = []
-            
+
             for word in words:
                 try:
                     if word in self.word_vectors:
                         word_vectors.append(self.word_vectors[word])
                 except:
                     continue
-                    
+
             if word_vectors:
                 avg_vector = np.mean(word_vectors, axis=0)
             else:
                 avg_vector = np.zeros(vector_size)
-                
+
             features.append(avg_vector)
-            
+
         return np.array(features, dtype=np.float32)

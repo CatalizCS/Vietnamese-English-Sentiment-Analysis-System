@@ -21,7 +21,7 @@ class TextCleaner:
         text = re.sub(r"<[^>]+>", "", text)
 
         # Remove special chars and digits 
-        text = re.sub(r"[^\w\s]", "", text)
+        text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
         text = text.lower()
 
         # Tokenize based on language

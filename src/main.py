@@ -190,6 +190,11 @@ def predict(language: str, input_file: str, output_file: str, config: Config):
 
     logger.info(f"Predictions saved to {output_file}")
 
+    # Output prediction results
+    for text, sentiment in zip(df["text"], df["sentiment"]):
+        print(f"Text: {text}")
+        print(f"Prediction: {sentiment}")
+
 
 def evaluate(language: str, input_file: str, config: Config):
     logger = Logger(__name__).logger

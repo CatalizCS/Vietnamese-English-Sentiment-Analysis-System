@@ -28,6 +28,7 @@ from sklearn.metrics import (
     roc_auc_score,
 )
 import numpy as np
+import collections
 
 
 class SVMWithProba(LinearSVC):
@@ -60,6 +61,17 @@ class EnhancedModelTrainer:
         self.regularization_config = config.REGULARIZATION_CONFIG
         self.validation_config = config.VALIDATION_CONFIG
         self.scoring_config = config.SCORING_CONFIG
+
+    def _convert_deque_to_list(self, obj):
+        """Recursively convert deque objects to lists in the given object."""
+        if isinstance(obj, collections.deque):
+            return list(obj)
+        elif isinstance(obj, dict):
+            return {k: self._convert_deque_to_list(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [self._convert_deque_to_list(v) for v in obj]
+        else:
+            return obj
 
     def create_ensemble_model(self):
         """Create model ensemble with documented algorithms"""
@@ -101,7 +113,7 @@ class EnhancedModelTrainer:
 
         checkpoint = {
             "model_state": model,
-            "metrics": metrics,
+            "metrics": self._convert_deque_to_list(metrics),
             "epoch": epoch,
             "timestamp": timestamp,
             "language": self.language,
@@ -159,7 +171,7 @@ class EnhancedModelTrainer:
 
         model_info = {
             "model": model,
-            "metrics": metrics,  # Save complete metrics including training history
+            "metrics": self._convert_deque_to_list(metrics),
             "feature_extractor": {
                 "vectorizer": self.feature_extractor.tfidf,
                 "svd": self.feature_extractor.svd,

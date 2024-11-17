@@ -38,7 +38,7 @@ function updatePopupUI(data) {
             elements.statusIndicator.className = 'h-3 w-3 rounded-full bg-green-500';
             elements.statusBadge.textContent = 'Online';
             elements.statusBadge.className = 'text-xs font-medium bg-green-100 text-green-800 px-2 py-1 rounded-full';
-            
+
             if (data.api.models) {
                 const modelStatus = Object.entries(data.api.models)
                     .map(([lang, status]) => `${lang.toUpperCase()}: ${status ? '✓' : '✗'}`)
@@ -57,7 +57,7 @@ function updatePopupUI(data) {
         // Update stats
         if (data.stats) {
             elements.analyzedCount.textContent = data.stats.analyzed || '0';
-            elements.successRate.textContent = 
+            elements.successRate.textContent =
                 `${Math.round((data.stats.successful / data.stats.analyzed) * 100) || 0}%`;
         }
 
@@ -82,8 +82,8 @@ function createElementIfMissing(id) {
 }
 
 function showError(message) {
-    const errorContainer = document.getElementById('error-container') || 
-                         createElementIfMissing('error-container');
+    const errorContainer = document.getElementById('error-container') ||
+        createElementIfMissing('error-container');
     errorContainer.classList.remove('hidden');
     errorContainer.textContent = message;
     console.error(message);
@@ -105,7 +105,7 @@ function setupConnection() {
                 port = chrome.runtime.connect({ name: 'popup' });
                 setupMessageHandlers(port);
                 startUpdateCycle(port);
-                
+
                 // Add auto-reconnect logic
                 port.onDisconnect.addListener(() => {
                     if (chrome.runtime.lastError) {
@@ -129,10 +129,10 @@ function retryConnection(retryCount) {
     port = null;
     clearInterval(updateInterval);
     if (reconnectTimeout) clearTimeout(reconnectTimeout);
-    
+
     if (retryCount < 3) {
         reconnectTimeout = setTimeout(
-            () => setupConnection(retryCount + 1), 
+            () => setupConnection(retryCount + 1),
             1000 * Math.pow(2, retryCount)
         );
     }
@@ -140,26 +140,26 @@ function retryConnection(retryCount) {
 
 function setupMessageHandlers(port) {
     if (!port) return;
-    
+
     port.onMessage.addListener((msg) => {
         try {
-            switch(msg.type) {
+            switch (msg.type) {
                 case 'PING':
                     port.postMessage({ type: 'PONG' });
                     break;
-                    
+
                 case 'STATUS_UPDATE':
                     if (msg.data) updatePopupUI(msg.data);
                     break;
-                    
+
                 case 'API_ERROR':
                     handleApiError(msg.error);
                     break;
-                    
+
                 case 'STATS_UPDATE':
                     updateStats(msg.stats);
                     break;
-                    
+
                 default:
                     console.warn('Unknown message type:', msg.type);
             }
@@ -190,10 +190,10 @@ function updateStats(stats) {
     if (elements.analyzedCount) {
         elements.analyzedCount.textContent = stats.analyzed || '0';
     }
-    
+
     if (elements.successRate) {
-        const rate = stats.analyzed > 0 
-            ? Math.round((stats.successful / stats.analyzed) * 100) 
+        const rate = stats.analyzed > 0
+            ? Math.round((stats.successful / stats.analyzed) * 100)
             : 0;
         elements.successRate.textContent = `${rate}%`;
     }
@@ -201,7 +201,7 @@ function updateStats(stats) {
 
 function startUpdateCycle(port) {
     if (updateInterval) clearInterval(updateInterval);
-    
+
     // Initial state request
     requestUpdate(port);
 
@@ -216,7 +216,7 @@ function startUpdateCycle(port) {
 
 function requestUpdate(port) {
     if (!port) return;
-    
+
     try {
         port.postMessage({ type: 'GET_INITIAL_STATE' });
         lastUpdateTime = Date.now();
@@ -232,7 +232,7 @@ async function getCurrentTab() {
             active: true,
             currentWindow: true
         });
-        
+
         if (!tabs || tabs.length === 0) {
             throw new Error('No active tab found');
         }
@@ -255,9 +255,9 @@ async function extractFacebookAccessToken(tab) {
                 try {
                     // Try to get EAAB token first
                     const ls = window.localStorage;
-                    const tokenKeys = Object.keys(ls).filter(key => 
-                        key.includes('token') || 
-                        key.includes('EAAB') || 
+                    const tokenKeys = Object.keys(ls).filter(key =>
+                        key.includes('token') ||
+                        key.includes('EAAB') ||
                         key.includes('accessToken')
                     );
 
@@ -271,11 +271,11 @@ async function extractFacebookAccessToken(tab) {
                     // Fallback to user ID from cookie
                     const cookieMatch = document.cookie.match(/c_user=([^;]+)/);
                     const userId = cookieMatch ? cookieMatch[1] : null;
-                    
+
                     if (!userId) {
                         throw new Error('Facebook access token not found');
                     }
-                    
+
                     return userId;
                 } catch (e) {
                     console.error('Error extracting token:', e);
@@ -312,7 +312,7 @@ async function analyzeFacebookPost(postId, accessToken) {
         // Send to our sentiment API
         const response = await fetch(`${this.API_URL}/batch`, {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 texts: texts,
                 language: 'vi'
@@ -359,7 +359,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('saveApiConfig').addEventListener('click', async () => {
         const apiUrl = document.getElementById('apiUrl').value.trim();
         const status = document.getElementById('apiUrlStatus');
-        
+
         if (!apiUrl) {
             status.textContent = 'Please enter an API URL';
             status.className = 'text-xs text-red-500';
@@ -369,7 +369,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             await chrome.storage.local.set({ apiUrl });
             chrome.runtime.sendMessage({ type: 'API_URL_CHANGED', apiUrl });
-            
+
             status.textContent = 'API URL saved successfully';
             status.className = 'text-xs text-green-500';
             setTimeout(() => status.textContent = '', 3000);
@@ -382,20 +382,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Add reset handler for API configuration
     document.getElementById('resetApiConfig').addEventListener('click', async () => {
         const status = document.getElementById('apiUrlStatus');
-        
+
         try {
             // Clear API URL from storage
             await chrome.storage.local.remove('apiUrl');
-            
+
             // Reset input field
             document.getElementById('apiUrl').value = '';
-            
+
             // Notify background script
-            chrome.runtime.sendMessage({ 
-                type: 'API_URL_CHANGED', 
+            chrome.runtime.sendMessage({
+                type: 'API_URL_CHANGED',
                 apiUrl: 'http://localhost:7270' // Reset to default
             });
-            
+
             status.textContent = 'Configuration reset successfully';
             status.className = 'text-xs text-green-500';
             setTimeout(() => status.textContent = '', 3000);
@@ -409,7 +409,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('analyzeCurrentPost').addEventListener('click', async () => {
         const button = document.getElementById('analyzeCurrentPost');
         const errorContainer = document.getElementById('error-container');
-        
+
         button.disabled = true;
         button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang phân tích...';
         errorContainer.classList.add('hidden');
@@ -417,7 +417,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
             // Get current tab with validation
             const tab = await getCurrentTab();
-            
+
             if (!tab?.url?.includes('facebook.com')) {
                 throw new Error('Vui lòng mở bài viết Facebook để phân tích');
             }
@@ -468,8 +468,6 @@ document.addEventListener('DOMContentLoaded', async () => {
             button.textContent = 'Phân tích bài viết này';
         }
     });
-
-    // ...existing code...
 });
 
 // Cleanup
@@ -522,7 +520,7 @@ async function ensureContentScriptConnection(tab) {
 async function analyzeCurrentPost(tab) {
     const button = document.getElementById('analyzeCurrentPost');
     const errorContainer = document.getElementById('error-container');
-    
+
     try {
         button.disabled = true;
         button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang kết nối...';
@@ -530,10 +528,10 @@ async function analyzeCurrentPost(tab) {
 
         // Ensure content script is ready
         await ensureContentScriptConnection(tab);
-        
+
         // Continue with analysis
         button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang phân tích...';
-        
+
         // ...rest of the analysis code...
 
     } catch (error) {
@@ -588,16 +586,16 @@ async function ensureContentScriptConnection(tab) {
 async function analyzeCurrentPost(tab) {
     const button = document.getElementById('analyzeCurrentPost');
     const errorContainer = document.getElementById('error-container');
-    
+
     try {
         button.disabled = true;
         button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang kết nối...';
-        
+
         // Ensure connection is ready
         await ensureContentScriptConnection(tab);
-        
+
         button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang phân tích...';
-        
+
         const postId = extractPostId(tab.url);
         if (!postId) {
             throw new Error('Không tìm thấy bài viết Facebook trên trang này');
@@ -676,7 +674,7 @@ async function ensureContentScriptConnection(tab) {
             }
         } catch (error) {
             console.warn(`Connection attempt ${retryCount + 1} failed:`, error);
-            
+
             // Inject content script if needed
             if (retryCount === 0) {
                 try {
@@ -689,7 +687,7 @@ async function ensureContentScriptConnection(tab) {
                 }
             }
         }
-        
+
         retryCount++;
         if (retryCount < maxRetries) {
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -703,7 +701,7 @@ async function ensureContentScriptConnection(tab) {
 document.getElementById('analyzeCurrentPost').addEventListener('click', async () => {
     const button = document.getElementById('analyzeCurrentPost');
     const errorContainer = document.getElementById('error-container');
-    
+
     try {
         button.disabled = true;
         button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Đang xử lý...';
@@ -715,7 +713,7 @@ document.getElementById('analyzeCurrentPost').addEventListener('click', async ()
         }
 
         await ensureContentScriptConnection(tab);
-        
+
         const postId = extractPostId(tab.url);
         if (!postId) {
             throw new Error('Không tìm thấy bài viết trên trang này');
@@ -744,4 +742,71 @@ document.getElementById('analyzeCurrentPost').addEventListener('click', async ()
         button.disabled = false;
         button.textContent = 'Phân tích bài viết này';
     }
+});
+
+class PopupAnalytics {
+    constructor() {
+        this.stats = {
+            total: 0,
+            successful: 0,
+            positive: 0,
+            negative: 0,
+            neutral: 0
+        };
+        this.initializeElements();
+        this.setupListeners();
+    }
+
+    initializeElements() {
+        this.elements = {
+            totalAnalyzed: document.getElementById('totalAnalyzed'),
+            totalSuccessful: document.getElementById('totalSuccessful'),
+            totalPositive: document.getElementById('totalPositive'),
+            totalNegative: document.getElementById('totalNegative'),
+            totalNeutral: document.getElementById('totalNeutral')
+        };
+    }
+
+    setupListeners() {
+        // Listen for stats updates from content script
+        chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+            if (message.type === 'STATS_UPDATE') {
+                this.updateStats(message.stats);
+            }
+        });
+
+        // Request initial stats
+        chrome.runtime.sendMessage({ type: 'GET_STATS' }, (response) => {
+            if (response && response.success) {
+                this.updateStats(response.stats);
+            }
+        });
+    }
+
+    updateStats(stats) {
+        // Update local stats
+        Object.assign(this.stats, stats);
+
+        // Update UI
+        this.elements.totalAnalyzed.textContent = this.stats.total;
+        this.elements.totalSuccessful.textContent = this.stats.successful;
+        this.elements.totalPositive.textContent = this.stats.positive;
+        this.elements.totalNegative.textContent = this.stats.negative;
+        this.elements.totalNeutral.textContent = this.stats.neutral;
+
+        // Add percentage tooltips
+        if (this.stats.total > 0) {
+            this.elements.totalPositive.setAttribute('title', 
+                `${((this.stats.positive / this.stats.total) * 100).toFixed(1)}%`);
+            this.elements.totalNegative.setAttribute('title',
+                `${((this.stats.negative / this.stats.total) * 100).toFixed(1)}%`);
+            this.elements.totalNeutral.setAttribute('title',
+                `${((this.stats.neutral / this.stats.total) * 100).toFixed(1)}%`);
+        }
+    }
+}
+
+// Initialize analytics when popup loads
+document.addEventListener('DOMContentLoaded', () => {
+    window.popupAnalytics = new PopupAnalytics();
 });

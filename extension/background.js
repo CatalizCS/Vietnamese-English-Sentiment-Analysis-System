@@ -94,7 +94,7 @@ class BackgroundService {
     pruneDataCache() {
         // Remove data older than 5 minutes
         const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-        this.dataCache.errors = this.dataCache.errors.filter(err => 
+        this.dataCache.errors = this.dataCache.errors.filter(err =>
             err.timestamp > fiveMinutesAgo
         );
     }
@@ -106,7 +106,7 @@ class BackgroundService {
                 chrome.tabs.sendMessage(tab.id, {
                     type: 'DATA_UPDATE',
                     data: this.dataCache
-                }).catch(() => {});
+                }).catch(() => { });
             });
         });
 
@@ -234,7 +234,7 @@ class BackgroundService {
     async updateAll() {
         const validPorts = Array.from(this.popupPorts).filter(port => this.isValidPort(port));
         this.popupPorts = new Set(validPorts);
-        
+
         for (const port of validPorts) {
             try {
                 await this.sendPopupUpdate(port);
@@ -316,7 +316,7 @@ class BackgroundService {
                     type: 'API_STATUS_UPDATE',
                     status: status,
                     timestamp: new Date().toISOString()
-                }).catch(() => {});
+                }).catch(() => { });
             });
         });
 
@@ -337,12 +337,12 @@ class BackgroundService {
 
     async updateStatusBadge(isAvailable, modelCount = 0) {
         try {
-            const statusText = isAvailable ? 
-                (modelCount > 0 ? `${modelCount}` : 'ON') : 
+            const statusText = isAvailable ?
+                (modelCount > 0 ? `${modelCount}` : 'ON') :
                 'OFF';
-            
-            const color = isAvailable ? 
-                (modelCount > 0 ? '#34a853' : '#fbbc05') : 
+
+            const color = isAvailable ?
+                (modelCount > 0 ? '#34a853' : '#fbbc05') :
                 '#ea4335';
 
             await Promise.all([
@@ -383,7 +383,7 @@ class BackgroundService {
 
     updateApiStatus(isAvailable, data = null) {
         this.lastApiCheck = Date.now();
-        
+
         // Reset stats when API status changes to offline
         if (!isAvailable && this.lastStatus?.isAvailable) {
             this.stats = { analyzed: 0, successful: 0 };
@@ -418,11 +418,11 @@ class BackgroundService {
             // Reset connection attempts and clear any pending requests
             this.connectionAttempts = 0;
             this.pendingRequests.clear();
-            
+
             // Clear stats and notify UI
             this.stats = { analyzed: 0, successful: 0 };
             await this.updateBadge();
-            
+
             // Notify all ports of reset
             this.notifyStatusChange({
                 ...this.lastStatus,
@@ -464,4 +464,100 @@ class BackgroundService {
             lastCheck: Date.now()
         };
     }
+}
+
+function extractComments(element) {
+    const comments = [];
+
+    if (!element) return comments;
+
+    try {
+        // Tìm tất cả role="article" elements
+        const commentElements = element.querySelectorAll('[role="article"]');
+
+        commentElements.forEach(container => {
+            try {
+                // Skip nếu là main post
+                if (container === element) return;
+
+                // Get author name - thử nhiều selectors
+                const authorElement = (
+                    container.querySelector('a[role="link"] span.x193iq5w span') ||
+                    container.querySelector('a[href*="/user/"] span') ||
+                    container.querySelector('a[role="link"] span')
+                );
+                const author = authorElement?.textContent?.trim();
+
+                // Get comment text
+                const textElement = container.querySelector('div[dir="auto"][style*="text-align"]');
+                const text = textElement?.textContent?.trim();
+
+                // Get timestamp
+                const timeElement = container.querySelector('a[href*="comment_id"]');
+                const time = timeElement?.textContent?.trim();
+
+                // Lấy unique ID
+                const commentId = container.getAttribute('data-commentid') ||
+                    timeElement?.href?.match(/comment_id=(\d+)/)?.[1] ||
+                    Date.now().toString();
+
+                // Only add if valid
+                if (author && text) {
+                    comments.push({
+                        id: commentId,
+                        author,
+                        text,
+                        time,
+                        isReply: isReplyComment(container)
+                    });
+                }
+            } catch (err) {
+                console.warn('Error extracting comment:', err);
+            }
+        });
+
+    } catch (error) {
+        console.error('Error in extractComments:', error);
+    }
+
+    return comments;
+}
+
+function isReplyComment(element) {
+    return !!(
+        element.closest('div[aria-label*="Reply"]') ||
+        element.closest('div[aria-label*="Trả lời"]') ||
+        element.closest('div[aria-label*="Phản hồi"]') ||
+        element.querySelector('a[role="link"][href*="reply_comment_id"]') ||
+        element.closest('div[style*="margin-left"]') ||
+        element.closest('div[style*="padding-left"]')
+    );
+}
+
+// Function to check if an element is a comment section
+function isCommentSection(element) {
+    // Check for common comment section identifiers
+    return element.querySelector('[role="article"]') !== null;
+}
+
+// Function to process mutations for comments
+function processMutations(mutations) {
+    mutations.forEach(mutation => {
+        mutation.addedNodes.forEach(node => {
+            if (node.nodeType === Node.ELEMENT_NODE) {
+                if (isCommentSection(node)) {
+                    const comments = extractComments(node);
+                    if (comments.length > 0) {
+                        // Send comments to content script
+                        chrome.tabs.query({ active: true, currentWindow: true }, function (tabs) {
+                            chrome.tabs.sendMessage(tabs[0].id, {
+                                type: "NEW_COMMENTS",
+                                comments: comments
+                            });
+                        });
+                    }
+                }
+            }
+        });
+    });
 }

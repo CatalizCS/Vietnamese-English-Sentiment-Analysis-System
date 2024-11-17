@@ -252,64 +252,54 @@ def evaluate_model(language: str, true_labels: List[int], predictions: List[int]
     metrics_store.update_ml_metrics(language, accuracy, precision, recall)
 
 
+class PredictionRequest(BaseModel):
+    text: str
+    language: str
+
+
 @app.post("/predict")
-async def predict(request: TextRequest, language: str = Depends(validate_language)):
-    """Optimized prediction endpoint"""
-    start_time = time.time()
-
+async def predict(request: Request):
     try:
-        if not request.text.strip():
-            raise HTTPException(status_code=400, detail="Empty text")
+        # Get input data
+        data = await request.json()
+        if not data or "text" not in data:
+            return JSONResponse(status_code=400, content={"error": "No text provided"})
 
-        # Get cached model
-        model = get_cached_model(language)
+        text = data["text"]
+        language = data.get("language", "vi")
 
-        # Create DataFrame with optimized memory usage
-        df = pd.DataFrame({"text": [request.text]}, copy=False)
+        # Initialize components
+        config = Config()
+        predictor = SentimentPredictor(language, config)
+        preprocessor = DataPreprocessor(language, config)
+        feature_extractor = FeatureExtractor(language, config)
 
-        # Process text with error handling
-        try:
-            processed_df = model["preprocessor"].preprocess(df)
-            features = model["extractor"].extract_features(processed_df["cleaned_text"])
-            prediction_start = time.time()
+        # Preprocess
+        df = pd.DataFrame({"text": [text]})
+        processed = preprocessor.preprocess(df)
 
-            # Create coroutine for prediction
-            result = await asyncio.get_event_loop().run_in_executor(
-                None, model["predictor"].predict_emotion, features, request.text
-            )
+        # Extract features
+        features = feature_extractor.extract_features(processed["cleaned_text"])
 
-            inference_time = time.time() - prediction_start
-            metrics_store.update_inference_time(language, inference_time)
+        # Get prediction with emotion
+        result = predictor.predict_emotion(features, text)
 
-        except Exception as e:
-            logger.error(f"Processing error: {str(e)}")
-            raise HTTPException(status_code=500, detail="Processing failed")
-
-        # Optimize response creation
-        response = {
-            "text": request.text,
-            "sentiment": result["sentiment"],
-            "confidence": float(result["sentiment_confidence"]),
-            "emotion": {
-                "label": result["emotion_vi"],
-                "emoji": result["emotion_emoji"],
-                "confidence": float(result["emotion_confidence"]),
-            },
-            "processing_time": time.time() - start_time,
-        }
-
-        # Update metrics asynchronously
-        asyncio.create_task(
-            metrics_store.update_processing_time(response["processing_time"])
+        return JSONResponse(
+            status_code=200,
+            content={
+                "text": text,
+                "sentiment": int(result["sentiment"]),
+                "sentiment_confidence": float(result["sentiment_confidence"]),
+                "emotion": result["emotion"],
+                "emotion_vi": result["emotion_vi"],
+                "emotion_emoji": result["emotion_emoji"],
+            }
         )
 
-        return response
-
-    except HTTPException as e:
-        raise e
     except Exception as e:
-        logger.error(f"Prediction error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log the error for debugging
+        print(f"Error in predict: {str(e)}")
+        return JSONResponse(status_code=500, content={"error": str(e)})
 
 
 @app.post("/batch")

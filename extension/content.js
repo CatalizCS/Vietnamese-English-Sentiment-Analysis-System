@@ -66,6 +66,8 @@ if (!window.sentimentAnalyzer) {
             this.healthCheckCacheTime = 30000; // Cache health check for 30 seconds
             this.healthCheckPromise = null; // Store pending health check promise
             console.log('FacebookAnalyzer initialized');
+            this.currentTheme = this.detectTheme();
+            this.setupThemeObserver();
         }
 
         setupPort() {
@@ -480,79 +482,67 @@ if (!window.sentimentAnalyzer) {
 
         async analyzePost(post) {
             console.log('Analyzing post:', post);
+
             // Ensure 'post' is a DOM Element
             if (!(post instanceof Element)) {
-                console.error('Invalid post element:', post);
+                console.warn('Invalid post element');
                 return;
             }
 
             const postId = post.getAttribute('data-post-id') || Date.now().toString();
 
             if (this.pendingUpdates.has(postId)) {
-                return; // Already processing
+                console.log('Post is already being analyzed');
+                return;
             }
 
+            this.pendingUpdates.add(postId);
+
             try {
-                this.pendingUpdates.add(postId);
+                // Disable the analyze button to prevent multiple clicks
                 const button = post.querySelector('.sentiment-analyze-btn');
-                if (button) button.disabled = true;
-
-                let totalAnalyzed = 0;
-                let successfulAnalyses = 0;
-
-                // Analyze main post content
-                const postContent = post.querySelector('[data-ad-preview="message"]');
-                if (postContent) {
-                    const content = postContent.textContent.trim();
-                    const result = await this.analyzeSentiment(content);
-                    if (result) {
-                        this.displayResult(postContent, result, 'Nội dung bài viết');
-                        successfulAnalyses++;
-                    }
-                    totalAnalyzed++;
+                if (button) {
+                    button.disabled = true;
+                    button.textContent = 'Đang phân tích...';
                 }
 
-                // Find and analyze comments using new method
+                // Analyze post content
+                await this.analyzeFacebookPost(post);
+
+                // Load all comments
+                await this.loadMoreComments(post);
+
+                // Find all comments in the post
                 const comments = this.findComments(post);
-                console.log(`Found ${comments.length} comments`);
 
+                // Analyze each comment
                 for (const comment of comments) {
-                    if (!comment.text) continue;
-
-                    const loadingIndicator = this.addLoadingIndicator(comment.element);
-
-                    try {
-                        const result = await this.analyzeSentiment(comment.text);
-                        if (result) {
-                            this.displayResult(
-                                comment.element,
-                                result,
-                                `Bình luận của ${comment.userName}`
-                            );
-                            successfulAnalyses++;
-                        }
-                        totalAnalyzed++;
-                    } finally {
-                        loadingIndicator.remove();
-                    }
+                    await this.analyzeComment(comment);
                 }
 
-                // Update statistics
-                this.stats.analyzed += totalAnalyzed;
-                this.stats.successful += successfulAnalyses;
-                chrome.runtime.sendMessage({
-                    type: 'UPDATE_STATS',
-                    stats: this.stats
-                });
+                // Update stats
+                this.stats.analyzed += comments.length;
+                this.stats.successful += comments.length; // Assuming all analyses are successful
 
+                // Notify background script to update stats
+                chrome.runtime.sendMessage({ type: 'UPDATE_STATS', stats: this.stats });
+
+                // Re-enable the analyze button
                 if (button) {
                     button.disabled = false;
                     button.textContent = 'Phân tích lại';
                 }
 
             } catch (error) {
-                console.error('Analysis error:', error);
-                this.showError('Có lỗi xảy ra khi phân tích');
+                console.error('Error analyzing post and comments:', error);
+                this.showError('Có lỗi xảy ra khi phân tích bài viết này.');
+
+                // Re-enable the analyze button
+                const button = post.querySelector('.sentiment-analyze-btn');
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = 'Phân tích lại';
+                }
             } finally {
                 this.pendingUpdates.delete(postId);
             }
@@ -870,7 +860,7 @@ if (!window.sentimentAnalyzer) {
                     if (text) {
                         const postResult = await this.analyzeSentiment(text);
                         if (postResult) {
-                            this.displayResult(postContent, postResult, 'Nội dung bài viết');
+                            this.displayResult(postContent, postResult);
                             successfulAnalyses++;
                         }
                         totalAnalyzed++;
@@ -916,21 +906,42 @@ if (!window.sentimentAnalyzer) {
             }
         }
 
-        displayResult(element, result, label = '') {
+        displayResult(element, result) {
             if (!result) return;
 
             const resultDiv = document.createElement('div');
             resultDiv.className = `sentiment-result sentiment-${this.getSentimentClass(result.sentiment)}`;
 
             resultDiv.innerHTML = `
-                ${label ? `<strong>${label}:</strong><br>` : ''}
-                ${result.emotion.emoji} 
-                <strong>${result.sentiment_label}</strong> - 
-                ${result.emotion.label}<br>
-                Độ tin cậy: ${(result.confidence * 100).toFixed(1)}%
+                <div style="margin: 4px 0;">
+                    <span class="emoji">${result.emotion_emoji}</span>
+                    <strong>${this.getSentimentLabel(result.sentiment)}</strong>
+                    - ${result.emotion_vi}
+                </div>
+                <span class="sentiment-confidence">
+                    Độ tin cậy: ${(result.sentiment_confidence * 100).toFixed(1)}%
+                </span>
             `;
 
+            // Insert after target element with smooth animation
+            resultDiv.style.opacity = '0';
+            resultDiv.style.transform = 'translateY(-4px)';
             element.parentNode.insertBefore(resultDiv, element.nextSibling);
+
+            // Trigger animation
+            requestAnimationFrame(() => {
+                resultDiv.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+                resultDiv.style.opacity = '1';
+                resultDiv.style.transform = 'translateY(0)';
+            });
+        }
+
+        getSentimentLabel(sentiment) {
+            return {
+                2: 'Tích cực',
+                1: 'Trung tính',
+                0: 'Tiêu cực'
+            }[sentiment] || 'Trung tính';
         }
 
         getSentimentClass(sentiment) {
@@ -968,72 +979,167 @@ if (!window.sentimentAnalyzer) {
             }, 60000); // 1 minute interval
         }
 
-        initStyles() {
-            const styles = `
-                .comment-buttons-wrapper {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
+        detectTheme() {
+            // Check for dark mode by looking at Facebook's background color
+            const bodyBg = window.getComputedStyle(document.body).backgroundColor;
+            return this.isHexColorDark(bodyBg) ? 'dark' : 'light';
+        }
+
+        isHexColorDark(color) {
+            // Convert RGB/RGBA to brightness value
+            const rgb = color.match(/\d+/g);
+            if (!rgb || rgb.length < 3) return false;
+
+            // Calculate relative luminance
+            const brightness = (parseInt(rgb[0]) * 299 + parseInt(rgb[1]) * 587 + parseInt(rgb[2]) * 114) / 1000;
+            return brightness < 128;
+        }
+
+        setupThemeObserver() {
+            // Watch for Facebook theme changes
+            const observer = new MutationObserver(() => {
+                const newTheme = this.detectTheme();
+                if (newTheme !== this.currentTheme) {
+                    this.currentTheme = newTheme;
+                    this.updateThemeStyles();
                 }
-                
-                .sentiment-analyze-btn-inline {
-                    display: inline-flex;
-                    align-items: center;
-                    cursor: pointer;
-                    color: #65676B;
-                    font-size: inherit;
-                    padding: 4px 8px;
+            });
+
+            observer.observe(document.body, {
+                attributes: true,
+                attributeFilter: ['class']
+            });
+        }
+
+        updateThemeStyles() {
+            const themeStyles = this.getThemeStyles();
+            let styleSheet = document.getElementById('sentiment-analyzer-styles');
+            if (styleSheet) {
+                styleSheet.textContent = themeStyles;
+            }
+        }
+
+        getThemeStyles() {
+            const baseStyles = `
+                .sentiment-analyze-btn {
+                    background: #1877f2;
+                    color: white;
+                    padding: 8px 16px;
                     border-radius: 6px;
-                    transition: background-color 0.2s;
+                    border: none;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: background 0.2s;
                 }
-                
-                .sentiment-analyze-btn-inline:hover {
-                    background-color: rgba(0, 0, 0, 0.05);
+
+                .sentiment-analyze-btn:hover {
+                    background: #166fe5;
                 }
-                
-                .analyze-comments-btn {
-                    display: flex;
-                    align-items: center;
-                    gap: 4px;
+
+                .sentiment-analyze-btn:disabled {
+                    background: #8ab4f8;
+                    cursor: not-allowed;
                 }
-                
-                .analyze-comments-btn svg {
-                    width: 16px;
-                    height: 16px;
-                    fill: currentColor;
+
+                .sentiment-result {
+                    margin: 8px 0;
+                    padding: 12px 16px;
+                    border-radius: 8px;
+                    font-size: 13px;
+                    line-height: 1.5;
+                    font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif;
+                    transition: all 0.2s ease;
                 }
-                
-                .sentiment-loading-overlay {
-                    position: absolute;
-                    top: 0;
-                    left: 0;
-                    right: 0;
-                    bottom: 0;
-                    background: rgba(255, 255, 255, 0.8);
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    z-index: 1000;
-                }
-                
-                .sentiment-stats {
-                    margin-top: 8px;
-                    font-size: 12px;
-                    color: #65676B;
-                }
-                
-                .sentiment-error {
-                    animation: fadeOut 0.3s ease-in-out forwards;
-                    animation-delay: 2.7s;
-                }
-                
-                @keyframes fadeOut {
-                    from { opacity: 1; }
-                    to { opacity: 0; }
+
+                .sentiment-result .emoji {
+                    font-size: 16px;
+                    margin-right: 6px;
+                    vertical-align: -2px;
                 }
             `;
 
-            this.styleSheet.textContent += styles;
+            const lightModeStyles = `
+                .sentiment-result {
+                    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+                }
+
+                .sentiment-result strong {
+                    color: #050505;
+                }
+
+                .sentiment-positive {
+                    background-color: #e7f3e8;
+                    border: 1px solid rgba(35, 134, 54, 0.15);
+                    color: #1d4121;
+                }
+
+                .sentiment-negative {
+                    background-color: #ffebe9;
+                    border: 1px solid rgba(255, 129, 130, 0.15);
+                    color: #67060c;
+                }
+
+                .sentiment-neutral {
+                    background-color: #f0f2f5;
+                    border: 1px solid rgba(0, 0, 0, 0.08);
+                    color: #050505;
+                }
+
+                .sentiment-confidence {
+                    background: rgba(0, 0, 0, 0.05);
+                    color: #050505;
+                }
+            `;
+
+            const darkModeStyles = `
+                .sentiment-result {
+                    box-shadow: 0 1px 2px rgba(255, 255, 255, 0.05);
+                }
+
+                .sentiment-result strong {
+                    color: #e4e6eb;
+                }
+
+                .sentiment-positive {
+                    background-color: rgba(45, 136, 64, 0.2);
+                    border: 1px solid rgba(45, 136, 64, 0.3);
+                    color: #88cf8f;
+                }
+
+                .sentiment-negative {
+                    background-color: rgba(255, 69, 68, 0.2);
+                    border: 1px solid rgba(255, 69, 68, 0.3);
+                    color: #ff6b6b;
+                }
+
+                .sentiment-neutral {
+                    background-color: rgba(255, 255, 255, 0.05);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    color: #e4e6eb;
+                }
+
+                .sentiment-confidence {
+                    background: rgba(255, 255, 255, 0.1);
+                    color: #e4e6eb;
+                }
+            `;
+
+            return `
+                ${baseStyles}
+                ${this.currentTheme === 'dark' ? darkModeStyles : lightModeStyles}
+                
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            }
+            `;
+        }
+
+        initStyles() {
+            // Replace existing initStyles with new theme-aware version
+            const styleSheet = document.getElementById('sentiment-analyzer-styles') || createStyleSheet();
+            styleSheet.textContent = this.getThemeStyles();
         }
 
         async initializeConnection(retryCount = 0) {
@@ -1226,9 +1332,196 @@ if (!window.sentimentAnalyzer) {
             return observer;
         }
 
+        async loadMoreComments(postElement) {
+            console.log('Loading all comments...');
+            try {
+                let continueLoading = true;
+                let lastCommentCount = 0;
+                let attempts = 0;
+                const maxAttempts = 30; // Increase the number of attempts to load comments
+
+                while (continueLoading && attempts < maxAttempts) {
+                    const currentComments = postElement.querySelectorAll('[role="article"]').length;
+                    console.log(`Current comment count: ${currentComments}`);
+
+                    // Check if new comments are loaded
+                    if (currentComments === lastCommentCount) {
+                        attempts++;
+                    } else {
+                        attempts = 0; // Reset attempts if new comments are found
+                        lastCommentCount = currentComments;
+                    }
+
+                    // Click all "view more comments" and "view previous comments" buttons
+                    const moreCommentButtons = Array.from(postElement.querySelectorAll('div[role="button"]')).filter(button => {
+                        const text = button.textContent.toLowerCase();
+                        return (text.includes('xem thêm bình luận') ||
+                            text.includes('xem các bình luận trước') ||
+                            text.includes('view more comments') ||
+                            text.includes('view previous comments') ||
+                            text.match(/\d+\s*(bình luận|comments?)/i));
+                    });
+
+                    // Click all "view replies" buttons
+                    const replyButtons = Array.from(postElement.querySelectorAll('div[role="button"]')).filter(button => {
+                        const text = button.textContent.toLowerCase();
+                        return (text.includes('phản hồi') ||
+                            text.includes('trả lời') ||
+                            text.includes('replies') ||
+                            text.match(/\d+\s*(reply|repl)/i));
+                    });
+
+                    let clickedAny = false;
+
+                    // Click "view more comments" buttons
+                    for (const button of moreCommentButtons) {
+                        try {
+                            // Scroll to button
+                            await this.smoothScrollTo(button);
+                            await new Promise(r => setTimeout(r, 1000));
+
+                            button.click();
+                            clickedAny = true;
+                            console.log('Clicked more comments button');
+                            await new Promise(r => setTimeout(r, 2000));
+                        } catch (error) {
+                            console.warn('Error clicking more comments button:', error);
+                        }
+                    }
+
+                    // Click "view replies" buttons
+                    for (const button of replyButtons) {
+                        try {
+                            await this.smoothScrollTo(button);
+                            await new Promise(r => setTimeout(r, 1000));
+
+                            button.click();
+                            clickedAny = true;
+                            console.log('Clicked reply button');
+                            await new Promise(r => setTimeout(r, 1500));
+                        } catch (error) {
+                            console.warn('Error clicking reply button:', error);
+                        }
+                    }
+
+                    // Stop if no buttons were clicked
+                    if (!clickedAny) {
+                        attempts++;
+                    }
+
+                    // Scroll to the bottom to trigger lazy loading
+                    await this.smoothScrollTo(postElement.lastElementChild);
+                    await new Promise(r => setTimeout(r, 2000));
+
+                    continueLoading = clickedAny || attempts < 3;
+                }
+
+                // Final count
+                const finalCommentCount = postElement.querySelectorAll('[role="article"]').length - 1; // Subtract 1 for the main post
+                console.log(`Finished loading comments. Total found: ${finalCommentCount}`);
+
+            } catch (error) {
+                console.error('Error loading comments:', error);
+            }
+        }
+
+        // Thêm helper method để scroll mượt
+        async smoothScrollTo(element) {
+            if (!element) return;
+
+            element.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center'
+            });
+
+            // Đợi scroll hoàn tất
+            await new Promise(resolve => {
+                let lastPos = window.scrollY;
+                const checkScrollEnd = setInterval(() => {
+                    if (window.scrollY === lastPos) {
+                        clearInterval(checkScrollEnd);
+                        resolve();
+                    }
+                    lastPos = window.scrollY;
+                }, 50);
+
+                // Timeout sau 3 giây nếu scroll không kết thúc
+                setTimeout(() => {
+                    clearInterval(checkScrollEnd);
+                    resolve();
+                }, 3000);
+            });
+        }
+
         findComments(postElement) {
-            const comments = this.parseComments(postElement);
-            return comments;
+            const comments = new Set(); // Sử dụng Set để tránh trùng lặp
+            try {
+                // Tìm tất cả role="article" elements
+                const commentElements = postElement.querySelectorAll('[role="article"]');
+                
+                commentElements.forEach(element => {
+                    // Skip nếu element này là main post
+                    if (element === postElement) return;
+
+                    try {
+                        // Lấy text content
+                        const textElement = element.querySelector('div[dir="auto"][style*="text-align"]');
+                        const text = textElement?.textContent?.trim();
+
+                        // Lấy author name - thử các selector khác nhau
+                        const authorElement = (
+                            element.querySelector('a[role="link"] span.x193iq5w span') || 
+                            element.querySelector('a[href*="/user/"] span') ||
+                            element.querySelector('a[role="link"] span')
+                        );
+                        const author = authorElement?.textContent?.trim();
+
+                        // Lấy timestamp
+                        const timeElement = element.querySelector('a[href*="comment_id"]');
+                        const timestamp = timeElement?.textContent?.trim();
+
+                        // Kiểm tra xem comment có phải là reply không
+                        const isReply = this.isReplyComment(element);
+
+                        // Chỉ thêm vào nếu có đủ text và author
+                        if (text && author) {
+                            comments.add({
+                                element,
+                                text,
+                                userName: author,
+                                timestamp,
+                                isReply,
+                                // Thêm id để track
+                                id: element.getAttribute('data-commentid') || 
+                                    timeElement?.href?.match(/comment_id=(\d+)/)?.[1] ||
+                                    Date.now().toString()
+                            });
+                        }
+                    } catch (err) {
+                        console.warn('Error parsing comment:', err);
+                    }
+                });
+
+                const commentArray = Array.from(comments);
+                console.log(`Found ${commentArray.length} unique comments`);
+                return commentArray;
+
+            } catch (error) {
+                console.error('Error finding comments:', error);
+                return Array.from(comments);
+            }
+        }
+
+        isReplyComment(element) {
+            // Kiểm tra các pattern chỉ ra đây là reply
+            return !!(
+                element.closest('div[aria-label*="Reply"]') ||
+                element.closest('div[aria-label*="Trả lời"]') ||
+                element.closest('div[aria-label*="Phản hồi"]') ||
+                element.querySelector('a[role="link"][href*="reply_comment_id"]') ||
+                element.closest('div[style*="margin-left"]') || // Replies thường được indent
+                element.closest('div[style*="padding-left"]')
+            );
         }
 
         findPostContent(element) {
@@ -1285,25 +1578,58 @@ if (!window.sentimentAnalyzer) {
 
             .sentiment-result {
                 margin: 8px 0;
-                padding: 8px 12px;
+                padding: 12px 16px;
                 border-radius: 8px;
                 font-size: 13px;
-                line-height: 1.4;
+                line-height: 1.5;
+                font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif;
+                box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+                transition: all 0.2s ease;
+            }
+
+            .sentiment-result strong {
+                font-weight: 600;
+                color: #050505;
+            }
+
+            .sentiment-result .emoji {
+                font-size: 16px;
+                margin-right: 6px;
+                vertical-align: -2px;
             }
 
             .sentiment-positive {
-                background: #e6f4ea;
-                border: 1px solid #34a853;
+                background-color: #e7f3e8;
+                border: 1px solid rgba(35, 134, 54, 0.15);
+                color: #1d4121;
             }
 
             .sentiment-negative {
-                background: #fce8e6;
-                border: 1px solid #ea4335;
+                background-color: #ffebe9;
+                border: 1px solid rgba(255, 129, 130, 0.15);
+                color: #67060c;
             }
 
             .sentiment-neutral {
-                background: #f1f3f4;
-                border: 1px solid #5f6368;
+                background-color: #f0f2f5;
+                border: 1px solid rgba(0, 0, 0, 0.08);
+                color: #050505;
+            }
+
+            .sentiment-result:hover {
+                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+                transform: translateY(-1px);
+            }
+
+            .sentiment-confidence {
+                display: inline-block;
+                margin-top: 4px;
+                padding: 2px 6px;
+                border-radius: 4px;
+                font-size: 12px;
+                font-weight: 500;
+                background: rgba(0, 0, 0, 0.05);
+                color: inherit;
             }
 
             .sentiment-loading {
@@ -1339,6 +1665,59 @@ if (!window.sentimentAnalyzer) {
             }
         `;
         document.head.appendChild(styleSheet);
+    }
+
+    // Create a set to track processed comments
+    const processedComments = new Set();
+
+    // Listen for new comments from background script
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.type === "NEW_COMMENTS") {
+            message.comments.forEach(comment => {
+                // Create unique ID for comment to avoid duplicates
+                const commentId = `${comment.author}-${comment.text}-${comment.time}`;
+
+                if (!processedComments.has(commentId)) {
+                    processedComments.add(commentId);
+
+                    // Send to API for sentiment analysis
+                    analyzeSentiment(comment.text)
+                        .then(sentiment => {
+                            // Add sentiment result to comment
+                            displaySentimentResult(sentiment, comment);
+                        })
+                        .catch(err => console.error('Error analyzing comment:', err));
+                }
+            });
+        }
+    });
+
+    function displaySentimentResult(sentiment, comment) {
+        // Find the comment element again using author and text
+        const commentElements = document.querySelectorAll('[role="article"][tabindex="-1"]');
+
+        for (const element of commentElements) {
+            const textElement = element.querySelector('div[dir="auto"][style="text-align: start"]');
+            if (textElement && textElement.textContent.includes(comment.text)) {
+                // Create sentiment display element
+                const sentimentDiv = document.createElement('div');
+                sentimentDiv.className = `sentiment-result sentiment-${sentiment.label.toLowerCase()}`;
+                sentimentDiv.innerHTML = `
+                    <div style="margin: 4px 0">
+                        <span class="emoji">${getSentimentEmoji(sentiment.label)}</span>
+                        <strong>${sentiment.label}</strong>
+                        - ${sentiment.explanation}
+                    </div>
+                    <span class="sentiment-confidence">
+                        Độ tin cậy: ${(sentiment.score * 100).toFixed(1)}%
+                    </span>
+                `;
+
+                // Insert after comment text
+                textElement.appendChild(sentimentDiv);
+                break;
+            }
+        }
     }
 }
 

@@ -156,3 +156,7 @@ class DataLoader:
         except FileNotFoundError:
             self.logger.warning(f"No manual data found for {language} at {file_path}")
             return pd.DataFrame(columns=['text', 'label'])
+
+    def load_data(self, file_path: str) -> pd.DataFrame:
+        """Load data from a CSV file."""
+        return pd.read_csv(file_path)
