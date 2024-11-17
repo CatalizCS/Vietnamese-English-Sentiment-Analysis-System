@@ -52,7 +52,7 @@ if (!window.sentimentAnalyzer) {
                 ],
                 vi: [
                     /Bình luận bởi (.*?)$/i,
-                    /Trả lời bởi (.*?)$/i, 
+                    /Trả lời bởi (.*?)$/i,
                     /Phản hồi từ (.*?)$/i,
                     /Bình luận của (.*?)$/i,
                     /Trả lời của (.*?)$/i,
@@ -60,12 +60,19 @@ if (!window.sentimentAnalyzer) {
                     /^(.*?) đã trả lời$/i
                 ]
             };
+
+            // Add cache control for API status
+            this.lastHealthCheck = null;
+            this.healthCheckCacheTime = 30000; // Cache health check for 30 seconds
+            this.healthCheckPromise = null; // Store pending health check promise
+            console.log('FacebookAnalyzer initialized');
         }
 
         setupPort() {
             try {
+                console.log('Setting up port connection');
                 this.port = chrome.runtime.connect({ name: 'content-script' });
-                
+
                 this.port.onDisconnect.addListener(() => {
                     console.log('Port disconnected, attempting reconnect...');
                     setTimeout(() => this.setupPort(), 1000);
@@ -78,27 +85,32 @@ if (!window.sentimentAnalyzer) {
 
         async initApiUrl() {
             try {
+                console.log('Initializing API URL');
                 const { apiUrl } = await chrome.storage.local.get('apiUrl');
                 if (apiUrl) {
                     this.API_URL = apiUrl;
                 }
+                console.log('API URL set to:', this.API_URL);
             } catch (error) {
                 console.error('Error loading API URL:', error);
             }
         }
 
         init() {
+            console.log('Initializing FacebookAnalyzer');
             this.observePageChanges();
             this.addInitialButtons();
             this.handleUrlChange(); // Add this line to handle URL changes
         }
 
         handleUrlChange() {
+            console.log('Setting up URL change handler');
             let lastUrl = location.href;
             const observer = new MutationObserver(() => {
                 const currentUrl = location.href;
                 if (currentUrl !== lastUrl) {
                     lastUrl = currentUrl;
+                    console.log('URL changed to:', currentUrl);
                     this.onUrlChanged();
                 }
             });
@@ -106,6 +118,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         onUrlChanged() {
+            console.log('Handling URL change');
             if (this.isFacebookPostUrl(location.href)) {
                 this.processCurrentPost();
             }
@@ -121,21 +134,27 @@ if (!window.sentimentAnalyzer) {
                 /facebook\.com\/video\.php\?v=\d+/,
                 /facebook\.com\/[^/]+\?story_fbid=\d+/
             ];
-            return patterns.some(pattern => pattern.test(url));
+            const isMatch = patterns.some(pattern => pattern.test(url));
+            console.log('isFacebookPostUrl:', isMatch);
+            return isMatch;
         }
 
         processCurrentPost() {
+            console.log('Processing current post');
             // Check if posts are loaded on the page
             const post = document.querySelector('[role="article"]');
             if (post) {
+                console.log('Post found, analyzing');
                 // Analyze the post and its comments
                 this.analyzePost(post);
             } else {
+                console.log('Post not found, setting up observer');
                 // Wait for the post to load
                 const observer = new MutationObserver((mutations, obs) => {
                     const post = document.querySelector('[role="article"]');
                     if (post) {
                         obs.disconnect();
+                        console.log('Post loaded, analyzing');
                         this.analyzePost(post);
                     }
                 });
@@ -144,6 +163,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         observePageChanges() {
+            console.log('Observing page changes');
             const observer = new MutationObserver(() => {
                 this.addInitialButtons();
                 this.addCommentSectionButtons();
@@ -155,6 +175,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         addInitialButtons() {
+            console.log('Adding initial buttons');
             const posts = document.querySelectorAll('div[data-pagelet^="FeedUnit_"]');
             posts.forEach(post => {
                 if (!this.processedPosts.has(post)) {
@@ -165,6 +186,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         addAnalyzeButton(post) {
+            console.log('Adding analyze button to post');
             const button = document.createElement('button');
             button.className = 'sentiment-analyze-btn';
             button.textContent = 'Phân tích cảm xúc';
@@ -184,6 +206,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         addCommentSectionButtons() {
+            console.log('Adding comment section buttons');
             // Find all comment section buttons that don't have our analyze button
             const commentButtons = document.querySelectorAll('div[role="button"]:not(.has-analyze-btn)');
 
@@ -229,6 +252,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         initConnection() {
+            console.log('Initializing connection');
             // Send ready message and wait for acknowledgment
             chrome.runtime.sendMessage({ type: 'CONTENT_SCRIPT_READY' }, (response) => {
                 if (response?.success) {
@@ -248,6 +272,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         setupConnectionListener() {
+            console.log('Setting up connection listener');
             // Notify that content script is ready
             chrome.runtime.sendMessage({ type: 'CONTENT_SCRIPT_READY' }, (response) => {
                 if (chrome.runtime.lastError) {
@@ -259,6 +284,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         registerMessageHandlers() {
+            console.log('Registering message handlers');
             chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
                 // Immediately send acknowledgment
                 sendResponse({ received: true });
@@ -289,22 +315,28 @@ if (!window.sentimentAnalyzer) {
             });
         }
 
-        handleAsyncMessage(request) {
+        async handleAsyncMessage(request) {
+            console.log('Handling async message:', request);
             return new Promise(async (resolve, reject) => {
                 try {
                     if (!request || !request.type) {
                         throw new Error('Invalid message format');
                     }
-    
+
                     let response;
                     switch (request.type) {
                         case 'ANALYZE_POST':
                             if (!request.postId) {
                                 throw new Error('Missing postId parameter');
                             }
-                            response = await this.analyzeFacebookPost(request.postId);
+                            // Find the post element first
+                            const postElement = await this.findPostElement(request.postId);
+                            if (!postElement) {
+                                throw new Error('Post element not found');
+                            }
+                            response = await this.analyzeFacebookPost(postElement);
                             break;
-                            
+
                         case 'ANALYZE_CURRENT':
                             const post = document.querySelector('[role="article"]');
                             if (!post) {
@@ -312,30 +344,30 @@ if (!window.sentimentAnalyzer) {
                             }
                             response = await this.analyzePost(post);
                             break;
-    
+
                         case 'PING':
-                            response = { 
-                                success: true, 
+                            response = {
+                                success: true,
                                 ready: this.readyState,
                                 url: window.location.href,
                                 status: this.API_STATUS
                             };
                             break;
-    
+
                         case 'GET_STATS':
-                            response = { 
-                                success: true, 
+                            response = {
+                                success: true,
                                 stats: this.stats,
                                 analyzed: this.stats.analyzed,
                                 successful: this.stats.successful
                             };
                             break;
-    
+
                         case 'RESET_STATS':
                             this.stats = { analyzed: 0, successful: 0 };
                             response = { success: true, stats: this.stats };
                             break;
-    
+
                         case 'UPDATE_STATE':
                             if (request.stats) {
                                 Object.assign(this.stats, request.stats);
@@ -343,46 +375,56 @@ if (!window.sentimentAnalyzer) {
                             if (request.apiStatus !== undefined) {
                                 this.API_STATUS = request.apiStatus;
                             }
-                            response = { 
-                                success: true, 
+                            response = {
+                                success: true,
                                 stats: this.stats,
-                                apiStatus: this.API_STATUS 
+                                apiStatus: this.API_STATUS
                             };
                             break;
-    
+
                         case 'API_URL_CHANGED':
                             await this.initApiUrl();
                             await this.checkApiStatus();
-                            response = { 
+                            response = {
                                 success: true,
                                 apiUrl: this.API_URL,
                                 status: this.API_STATUS
                             };
                             break;
-    
+
                         case 'CHECK_API':
                             const status = await this.checkApiStatus();
-                            response = { 
+                            response = {
                                 success: true,
                                 status: status,
-                                apiUrl: this.API_URL 
+                                apiUrl: this.API_URL
                             };
                             break;
-    
+
+                        case 'API_STATUS_UPDATE':
+                            this.handleApiStatusUpdate(request.status);
+                            response = { success: true };
+                            break;
+
+                        case 'DATA_UPDATE':
+                            this.handleDataUpdate(request.data);
+                            response = { success: true };
+                            break;
+
                         default:
                             throw new Error(`Unsupported message type: ${request.type}`);
                     }
-    
-                    resolve({ 
+
+                    resolve({
                         success: true,
                         requestId: request.requestId,
-                        ...response 
+                        ...response
                     });
-    
+
                 } catch (error) {
                     console.error('Message handling error:', error);
-                    reject({ 
-                        success: false, 
+                    reject({
+                        success: false,
                         requestId: request?.requestId,
                         error: error.message || 'Unknown error occurred',
                         details: error.stack
@@ -391,7 +433,17 @@ if (!window.sentimentAnalyzer) {
             });
         }
 
+        handleApiStatusUpdate(status) {
+            console.log('API status updated:', status);
+            this.API_STATUS = status.isAvailable;
+
+            if (status.isAvailable) {
+                this.processPendingUpdates();
+            }
+        }
+
         async findPostElement(postId) {
+            console.log('Finding post element for postId:', postId);
             const selectors = [
                 `[data-post-id="${postId}"]`,
                 `[data-ft*="${postId}"]`,
@@ -399,7 +451,7 @@ if (!window.sentimentAnalyzer) {
                 `[id*="${postId}"]`,
                 '[role="article"]'
             ];
-            
+
             const element = document.querySelector(selectors.join(','));
             if (!element) {
                 throw new Error('Post element not found');
@@ -408,6 +460,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         async processPendingMessages() {
+            console.log('Processing pending messages');
             while (this.pendingMessages.length > 0) {
                 const { request, sender, sendResponse } = this.pendingMessages.shift();
                 await this.handleMessage(request, sender, sendResponse);
@@ -415,6 +468,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         handleDataUpdate(data) {
+            console.log('Handling data update:', data);
             if (data.status) {
                 this.API_STATUS = data.status.isAvailable;
             }
@@ -425,6 +479,13 @@ if (!window.sentimentAnalyzer) {
         }
 
         async analyzePost(post) {
+            console.log('Analyzing post:', post);
+            // Ensure 'post' is a DOM Element
+            if (!(post instanceof Element)) {
+                console.error('Invalid post element:', post);
+                return;
+            }
+
             const postId = post.getAttribute('data-post-id') || Date.now().toString();
 
             if (this.pendingUpdates.has(postId)) {
@@ -457,14 +518,14 @@ if (!window.sentimentAnalyzer) {
 
                 for (const comment of comments) {
                     if (!comment.text) continue;
-                    
+
                     const loadingIndicator = this.addLoadingIndicator(comment.element);
-                    
+
                     try {
                         const result = await this.analyzeSentiment(comment.text);
                         if (result) {
                             this.displayResult(
-                                comment.element, 
+                                comment.element,
                                 result,
                                 `Bình luận của ${comment.userName}`
                             );
@@ -498,43 +559,70 @@ if (!window.sentimentAnalyzer) {
         }
 
         async checkApiStatus() {
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 3000);
-
-                const response = await fetch(`${this.API_URL}/health`, {
-                    signal: controller.signal,
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json',
-                        'Cache-Control': 'no-cache'
-                    },
-                    mode: 'cors',
-                    cache: 'no-cache'
-                });
-
-                clearTimeout(timeoutId);
-
-                if (response.ok) {
-                    const data = await response.json();
-                    const models = data.models || { vi: false, en: false };
-                    const activeModels = Object.values(models).filter(status => status).length;
-
-                    this.API_STATUS = data.status === "healthy" && activeModels > 0;
-                    return this.API_STATUS;
-                }
-
-                this.API_STATUS = false;
-                return false;
-
-            } catch (error) {
-                console.error('API check error:', error);
-                this.API_STATUS = false;
-                return false;
+            console.log('Checking API status');
+            // Return cached status if within cache time
+            if (this.lastHealthCheck &&
+                Date.now() - this.lastHealthCheck.timestamp < this.healthCheckCacheTime) {
+                return this.lastHealthCheck.status;
             }
+
+            // Return existing promise if health check is in progress
+            if (this.healthCheckPromise) {
+                return this.healthCheckPromise;
+            }
+
+            // Perform new health check
+            this.healthCheckPromise = (async () => {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), 3000);
+
+                    const response = await fetch(`${this.API_URL}/health`, {
+                        signal: controller.signal,
+                        method: 'GET',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Cache-Control': 'no-cache'
+                        },
+                        mode: 'cors',
+                        cache: 'no-cache'
+                    });
+
+                    clearTimeout(timeoutId);
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        const models = data.models || { vi: false, en: false };
+                        const activeModels = Object.values(models).filter(status => status).length;
+
+                        this.API_STATUS = data.status === "healthy" && activeModels > 0;
+
+                        // Cache the result
+                        this.lastHealthCheck = {
+                            timestamp: Date.now(),
+                            status: this.API_STATUS
+                        };
+
+                        return this.API_STATUS;
+                    }
+
+                    this.API_STATUS = false;
+                    return false;
+
+                } catch (error) {
+                    console.error('API check error:', error);
+                    this.API_STATUS = false;
+                    return false;
+                } finally {
+                    this.healthCheckPromise = null;
+                }
+            })();
+
+            return this.healthCheckPromise;
         }
 
         async analyzeSentiment(text, retryCount = 0) {
+            console.log('Analyzing sentiment for text:', text);
             if (!this.API_STATUS && !(await this.checkApiStatus())) {
                 this.showError('API không khả dụng. Vui lòng thử lại sau.');
                 return null;
@@ -578,6 +666,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         async processPendingUpdates() {
+            console.log('Processing pending updates');
             if (this.isProcessing || this.updateQueue.length === 0) return;
 
             this.isProcessing = true;
@@ -593,6 +682,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         async processUpdate(update) {
+            console.log('Processing update:', update);
             try {
                 switch (update.type) {
                     case 'POST_ANALYSIS':
@@ -624,6 +714,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         async analyzeComment(comment) {
+            console.log('Analyzing comment:', comment);
             const loadingIndicator = this.addLoadingIndicator(comment);
             try {
                 const text = comment.textContent.trim();
@@ -639,6 +730,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         async analyzeBatch(items) {
+            console.log('Analyzing batch of items:', items);
             for (const item of items) {
                 try {
                     if (item.type === 'post') {
@@ -653,6 +745,7 @@ if (!window.sentimentAnalyzer) {
         }
 
         async extractPostContent(postElement) {
+            console.log('Extracting post content from element:', postElement);
             try {
                 const content = {
                     text: '',
@@ -670,7 +763,7 @@ if (!window.sentimentAnalyzer) {
                 }
 
                 // Extract comments
-                const commentElements = postElement.querySelectorAll('[role="article"][aria-label*="Comment"]');
+                const commentElements = postElement.querySelectorAll('[role="article"]');
                 for (const comment of commentElements) {
                     try {
                         const commentData = {
@@ -759,48 +852,36 @@ if (!window.sentimentAnalyzer) {
             return counts;
         }
 
-        async analyzeFacebookPost(postId) {
+        async analyzeFacebookPost(postElement) {
+            console.log('Analyzing Facebook post:', postElement);
             try {
-                const postElement = document.querySelector([
-                    `div[role="article"]`,
-                    `[data-post-id="${postId}"]`,
-                    `[data-ft*="${postId}"]`,
-                    `[id*="post_content_${postId}"]`
-                ].join(','));
-
-                if (!postElement) {
-                    throw new Error('Không tìm thấy nội dung bài viết');
-                }
-
-                // Use DOM extraction method directly
-                const content = await this.extractPostContent(postElement);
-                
-                if (!content.text && !content.comments.length) {
-                    throw new Error('Không tìm thấy nội dung để phân tích');
+                // Validate post element
+                if (!postElement || !(postElement instanceof Element)) {
+                    throw new Error('Invalid post element provided');
                 }
 
                 let totalAnalyzed = 0;
                 let successfulAnalyses = 0;
 
-                // Analyze main post content
-                if (content.text) {
-                    const postResult = await this.analyzeSentiment(content.text);
-                    if (postResult) {
-                        this.displayResult(
-                            postElement.querySelector('[data-ad-preview="message"]'),
-                            postResult,
-                            'Nội dung bài viết'
-                        );
-                        successfulAnalyses++;
+                // Use custom element query helper
+                const postContent = this.findPostContent(postElement);
+                if (postContent) {
+                    const text = postContent.textContent.trim();
+                    if (text) {
+                        const postResult = await this.analyzeSentiment(text);
+                        if (postResult) {
+                            this.displayResult(postContent, postResult, 'Nội dung bài viết');
+                            successfulAnalyses++;
+                        }
+                        totalAnalyzed++;
                     }
-                    totalAnalyzed++;
                 }
 
                 // Find and analyze comments
                 const comments = this.findComments(postElement);
                 for (const comment of comments) {
                     if (!comment.text) continue;
-                    
+
                     const loadingIndicator = this.addLoadingIndicator(comment.element);
                     try {
                         const result = await this.analyzeSentiment(comment.text);
@@ -818,6 +899,7 @@ if (!window.sentimentAnalyzer) {
                     }
                 }
 
+                // Update stats
                 this.stats.analyzed += totalAnalyzed;
                 this.stats.successful += successfulAnalyses;
 
@@ -876,10 +958,14 @@ if (!window.sentimentAnalyzer) {
         }
 
         startApiStatusCheck() {
-            // Check API status periodically
+            console.log('Starting API status check');
+            // Check API status every 60 seconds instead of 5 seconds
             setInterval(async () => {
-                await this.checkApiStatus();
-            }, this.apiCheckInterval);
+                if (!this.lastHealthCheck ||
+                    Date.now() - this.lastHealthCheck.timestamp >= 60000) {
+                    await this.checkApiStatus();
+                }
+            }, 60000); // 1 minute interval
         }
 
         initStyles() {
@@ -950,17 +1036,20 @@ if (!window.sentimentAnalyzer) {
             this.styleSheet.textContent += styles;
         }
 
-        async initializeConnection() {
+        async initializeConnection(retryCount = 0) {
+            console.log('Initializing connection');
             try {
                 // Signal that content script is ready
-                chrome.runtime.sendMessage({ 
-                    type: 'CONTENT_SCRIPT_READY', 
-                    url: window.location.href 
+                chrome.runtime.sendMessage({
+                    type: 'CONTENT_SCRIPT_READY',
+                    url: window.location.href
                 }, (response) => {
                     if (chrome.runtime.lastError) {
                         console.warn('Initial connection failed:', chrome.runtime.lastError);
                         // Retry after delay
-                        setTimeout(() => this.initializeConnection(), 1000);
+                        if (retryCount < this.MAX_RETRIES) {
+                            setTimeout(() => this.initializeConnection(retryCount + 1), 1000);
+                        }
                         return;
                     }
                     this.readyState = true;
@@ -970,10 +1059,10 @@ if (!window.sentimentAnalyzer) {
                 // Handle connection requests
                 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     if (message.type === 'PING') {
-                        sendResponse({ 
-                            success: true, 
+                        sendResponse({
+                            success: true,
                             ready: this.readyState,
-                            url: window.location.href 
+                            url: window.location.href
                         });
                         return true;
                     }
@@ -983,80 +1072,186 @@ if (!window.sentimentAnalyzer) {
             } catch (error) {
                 console.error('Connection initialization error:', error);
                 // Retry after delay
-                setTimeout(() => this.initializeConnection(), 1000);
+                if (retryCount < this.MAX_RETRIES) {
+                    setTimeout(() => this.initializeConnection(retryCount + 1), 1000);
+                }
             }
         }
 
-        findComments(postElement) {
-            const comments = [];
-            const elements = Array.from(postElement.getElementsByTagName('*'));
-            
-            for (const element of elements) {
-                const ariaLabel = element.getAttribute('aria-label') || '';
-                let isComment = false;
-                let userName = '';
+        /**
+         * Extract comment text from a Facebook comment element
+         * @param {Element} commentElement - The root comment element
+         * @returns {string|null}
+         */
+        extractCommentText(commentElement) {
+            // Tìm div có attribute dir="auto" chứa nội dung comment
+            const textContainers = commentElement.querySelectorAll('div[dir="auto"]');
 
-                // Check English patterns
-                for (const pattern of this.COMMENT_PATTERNS.en) {
-                    const match = ariaLabel.match(pattern);
-                    if (match) {
-                        isComment = true;
-                        userName = match[1];
-                        break;
-                    }
+            for (const container of textContainers) {
+                // Kiểm tra xem div này có phải là container chứa nội dung comment không
+                // bằng cách verify nó không chứa các elements khác như link, button
+                if (!container.querySelector('a, button') && container.textContent.trim()) {
+                    return container.textContent.trim();
                 }
+            }
 
-                // Check Vietnamese patterns if not found in English
-                if (!isComment) {
-                    for (const pattern of this.COMMENT_PATTERNS.vi) {
-                        const match = ariaLabel.match(pattern);
-                        if (match) {
-                            isComment = true;
-                            userName = match[1];
-                            break;
+            return null;
+        }
+
+        /**
+         * Extract username from a Facebook comment element
+         * @param {Element} commentElement - The root comment element
+         * @returns {string|null}
+         */
+        extractUsername(commentElement) {
+            // Tìm link profile của user
+            const userLinks = commentElement.querySelectorAll('a[role="link"]');
+
+            for (const link of userLinks) {
+                // Kiểm tra xem link có phải là profile link không
+                const href = link.getAttribute('href');
+                if (href && href.includes('/user/')) {
+                    // Tìm span chứa tên người dùng
+                    const spans = link.querySelectorAll('span');
+                    for (const span of spans) {
+                        const text = span.textContent.trim();
+                        // Loại bỏ các text không phải tên người dùng như timestamp
+                        if (text && !text.includes('h') && !text.match(/^\d+$/)) {
+                            return text;
                         }
                     }
                 }
+            }
 
-                if (isComment && element.getAttribute('role') === 'article') {
-                    comments.push({
-                        element: element,
-                        userName: userName,
-                        id: element.getAttribute('data-commentid') || Date.now().toString(),
-                        text: this.extractCommentText(element)
-                    });
+            return null;
+        }
+
+        /**
+         * Extract timestamp from a Facebook comment element
+         * @param {Element} commentElement - The root comment element
+         * @returns {string|null}
+         */
+        extractTimestamp(commentElement) {
+            // Tìm link chứa timestamp
+            const links = commentElement.querySelectorAll('a');
+
+            for (const link of links) {
+                const text = link.textContent.trim();
+                // Timestamp thường có format như "1h", "2m", "3d" etc.
+                if (text.match(/^\d+[hdmsy]$/i)) {
+                    return text;
+                }
+            }
+
+            return null;
+        }
+
+        /**
+         * Check if user is a top contributor
+         * @param {Element} commentElement - The root comment element
+         * @returns {boolean}
+         */
+        isTopContributor(commentElement) {
+            const elements = commentElement.querySelectorAll('div[role="link"]');
+            for (const element of elements) {
+                if (element.textContent.includes('Top contributor')) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /**
+         * Parse a single Facebook comment
+         * @param {Element} commentElement - The root comment element with role="article"
+         * @returns {Object} Parsed comment data
+         */
+        parseComment(commentElement) {
+            return {
+                username: this.extractUsername(commentElement),
+                text: this.extractCommentText(commentElement),
+                timestamp: this.extractTimestamp(commentElement),
+                isTopContributor: this.isTopContributor(commentElement)
+            };
+        }
+
+        /**
+         * Parse all comments in a container
+         * @param {Element} container - The container element
+         * @returns {Array<Object>} Array of parsed comments
+         */
+        parseComments(container) {
+            const commentElements = container.querySelectorAll('[role="article"]');
+            const comments = [];
+
+            for (const element of commentElements) {
+                try {
+                    const comment = this.parseComment(element);
+                    if (comment.text && comment.username) { // Only add valid comments
+                        comments.push(comment);
+                    }
+                } catch (error) {
+                    console.warn('Failed to parse comment:', error);
                 }
             }
 
             return comments;
         }
 
-        extractCommentText(commentElement) {
-            // Find text content using common patterns
-            const contentPatterns = [
-                '[data-ad-preview="message"]',
-                '[data-ad-comet-preview="message"]',
-                '.userContent',
-                '.UFICommentBody'
+        /**
+         * Utility function to observe DOM changes and parse new comments
+         * @param {Element} container - The container to observe
+         * @param {Function} callback - Callback function to handle new comments
+         * @returns {MutationObserver}
+         */
+        observeNewComments(container, callback) {
+            const observer = new MutationObserver((mutations) => {
+                for (const mutation of mutations) {
+                    const newComments = Array.from(mutation.addedNodes)
+                        .filter(node => node.nodeType === 1 && node.getAttribute('role') === 'article')
+                        .map(element => this.parseComment(element))
+                        .filter(comment => comment.text && comment.username);
+
+                    if (newComments.length > 0) {
+                        callback(newComments);
+                    }
+                }
+            });
+
+            observer.observe(container, {
+                childList: true,
+                subtree: true
+            });
+
+            return observer;
+        }
+
+        findComments(postElement) {
+            const comments = this.parseComments(postElement);
+            return comments;
+        }
+
+        findPostContent(element) {
+            if (!element) return null;
+
+            // Try different selectors in order of preference
+            const selectors = [
+                'div[dir="auto"][style*="text-align"]',
+                'div[data-ad-preview="message"]',
+                'div[data-ad-comet-preview="message"]',
+                // Fallback selectors
+                '[role="article"] div[dir="auto"]',
+                '[data-ad-preview="message"]'
             ];
 
-            for (const pattern of contentPatterns) {
-                const element = commentElement.querySelector(pattern);
-                if (element) {
-                    return element.textContent.trim();
+            for (const selector of selectors) {
+                const content = element.querySelector(selector);
+                if (content?.textContent.trim()) {
+                    return content;
                 }
             }
 
-            // Fallback: Try to find text content in any paragraph elements
-            const paragraphs = commentElement.getElementsByTagName('p');
-            if (paragraphs.length > 0) {
-                return Array.from(paragraphs)
-                    .map(p => p.textContent.trim())
-                    .filter(text => text)
-                    .join(' ');
-            }
-
-            return '';
+            return null;
         }
     }
 
@@ -1146,3 +1341,4 @@ if (!window.sentimentAnalyzer) {
         document.head.appendChild(styleSheet);
     }
 }
+

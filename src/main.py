@@ -107,28 +107,41 @@ def train(language: str, config: Config):
         # Record start time
         start_time = datetime.now()
 
-        # Train model
+        # Train model with error handling
         model = model_trainer.train_with_grid_search(X_train, y_train)
+        if model is None or not isinstance(model, dict):
+            raise ValueError("Model training failed - no valid models returned")
 
         # Calculate training time
         training_time = (datetime.now() - start_time).total_seconds()
 
+        # Get metrics for best performing model
+        best_model_name = max(model.items(), key=lambda x: getattr(x[1], 'best_score_', 0))[0]
+        best_model = model[best_model_name]
+
         # Evaluate on test set
         X_test, y_test = data_loader.get_features_and_labels(test_df)
         X_test_features = feature_extractor.extract_features(X_test)
-
-        # Get final metrics
+        
+        # Calculate metrics using the best model
+        test_score = best_model.score(X_test_features, y_test)
+        
         final_metrics = {
-            "test_score": model["rf"].score(X_test_features, y_test),
-            "feature_importance": getattr(model["rf"], "feature_importances_", None),
+            "test_score": test_score,
+            "best_model": best_model_name,
             "training_time": training_time,
         }
+
+        if hasattr(best_model, 'feature_importances_'):
+            final_metrics["feature_importance"] = best_model.feature_importances_.tolist()
 
         # Save final model with metrics
         model_trainer.save_final_model(model, final_metrics)
 
         logger.info("Training completed successfully")
         logger.info(f"Total training time: {training_time:.2f} seconds")
+        logger.info(f"Best model: {best_model_name} with test score: {test_score:.4f}")
+        
         return model
 
     except Exception as e:
@@ -213,7 +226,7 @@ def validate_paths(input_file: str = None, output_file: str = None):
 def test_model(language: str, config: Config):
     """Interactive model testing"""
     logger = Logger(__name__).logger
-    menu = TerminalMenu()  # Move menu initialization to top
+    menu = TerminalMenu(config)  # Pass config here
 
     try:
         # Initialize components
@@ -1270,11 +1283,14 @@ def get_server_logs(port, lines=1000):
         return []
 
 def main():
-    # Only cleanup when starting the program
-    cleanup_api_servers()  # This will cleanup any leftover servers from previous crashes
-
-    menu = TerminalMenu()
+    # Initialize config first
     config = Config()
+    
+    # Pass config to TerminalMenu
+    menu = TerminalMenu(config)
+    
+    # Only cleanup when starting the program
+    cleanup_api_servers()
 
     while True:
         menu.display_header()

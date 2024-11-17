@@ -8,11 +8,25 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
-from sklearn.feature_selection import SelectKBest, chi2
-from sklearn.utils.class_weight import compute_sample_weight
+from sklearn.feature_selection import (
+    SelectFromModel,
+    SelectKBest,
+    chi2,
+    mutual_info_classif,
+)
+from sklearn.utils.class_weight import compute_sample_weight, compute_class_weight
 import matplotlib.pyplot as plt
 import seaborn as sns
 from src.utils.logger import Logger
+from sklearn.metrics import (
+    f1_score,
+    precision_score,
+    recall_score,
+    make_scorer,
+    balanced_accuracy_score,
+    roc_auc_score,
+)
+import numpy as np
 
 
 class EnhancedModelTrainer:
@@ -36,50 +50,77 @@ class EnhancedModelTrainer:
         self.training_time = 0
         self.feature_extractor = None  # Initialize as None
         self.param_grid = {
-            "rf__n_estimators": [200, 300],  # Increased trees
-            "rf__max_depth": [20, 30],  # Deeper trees
-            "rf__min_samples_split": [2, 5],  # More granular splits
-            "rf__min_samples_leaf": [1, 2],  # More granular leaves
-            "rf__class_weight": ["balanced"],
-            "svm__C": [0.1, 1.0, 10.0],  # More C values
-            "svm__tol": [1e-4],  # Tighter tolerance
-            "svm__max_iter": [2000],  # More iterations
+            "rf__n_estimators": [500, 1000],  # Increased trees significantly
+            "rf__max_depth": [50, 100],  # Deeper trees
+            "rf__min_samples_split": [2, 3],  # More precise splits
+            "rf__min_samples_leaf": [1],  # Allow smaller leaf size
+            "rf__max_features": ["sqrt", "log2"],  # Add feature selection options
+            "rf__class_weight": [
+                "balanced",
+                "balanced_subsample",
+            ],  # Add subsample option
+            "svm__C": [0.1, 1.0, 10.0, 100.0],  # More regularization options
+            "svm__tol": [1e-4, 1e-5],  # More precise convergence
+            "svm__max_iter": [5000],  # More iterations for convergence
             "svm__class_weight": ["balanced"],
-            "svm__dual": [False],  # Added dual parameter
-            "nb__alpha": [0.1, 0.5, 1.0],  # More alpha values
-            "nb__fit_prior": [True, False],
-            "feature_selection__k": [200, 300],  # More features
+            "svm__dual": [False],
+            "nb__alpha": [0.01, 0.1, 0.5],  # More smoothing options
+            "nb__fit_prior": [True],
+            "feature_selection__k": [500, 1000],  # More features
         }
 
     def create_ensemble_model(self):
         """Creates an enhanced ensemble of models"""
-        # Initialize basic pipelines with sample weight support
+        # Initialize pipelines with improved configurations
         rf_pipeline = Pipeline(
             [
                 ("scaler", MinMaxScaler()),
-                ("rf", RandomForestClassifier(random_state=42)),
+                (
+                    "feature_selection",
+                    SelectFromModel(
+                        estimator=RandomForestClassifier(
+                            n_estimators=100, random_state=42
+                        )
+                    ),
+                ),
+                (
+                    "rf",
+                    RandomForestClassifier(
+                        random_state=42,
+                        n_jobs=-1,
+                        # Remove warm_start and class_weight from here
+                        bootstrap=True,
+                        criterion="entropy",
+                    ),
+                ),
             ]
         )
 
         svm_pipeline = Pipeline(
             [
                 ("scaler", MinMaxScaler()),
-                ("feature_selection", SelectKBest(chi2)),
-                ("svm", LinearSVC(random_state=42)),
+                ("feature_selection", SelectKBest(score_func=mutual_info_classif)),
+                (
+                    "svm",
+                    LinearSVC(
+                        random_state=42,
+                        dual=False,
+                        class_weight="balanced",
+                        max_iter=5000,
+                    ),
+                ),
             ]
         )
 
         nb_pipeline = Pipeline(
             [
                 ("scaler", MinMaxScaler()),
-                ("feature_selection", SelectKBest(chi2)),
-                ("nb", MultinomialNB()),
+                ("feature_selection", SelectKBest(score_func=mutual_info_classif)),
+                ("nb", MultinomialNB(fit_prior=True)),
             ]
         )
 
-        models = [("rf", rf_pipeline), ("svm", svm_pipeline), ("nb", nb_pipeline)]
-
-        return models
+        return [("rf", rf_pipeline), ("svm", svm_pipeline), ("nb", nb_pipeline)]
 
     def save_checkpoint(self, model, metrics, epoch=None):
         """Save training checkpoint"""
@@ -246,7 +287,7 @@ class EnhancedModelTrainer:
             print(traceback.format_exc())
 
     def train_with_grid_search(self, X_train, y_train):
-        """Enhanced training with feature extractor validation"""
+        """Enhanced training with better optimization"""
         start_time = datetime.now()
         self.logger.info("Starting model training...")
 
@@ -268,7 +309,18 @@ class EnhancedModelTrainer:
 
             self.logger.info(f"Extracted features shape: {X_train_features.shape}")
 
-            # Create and train models with optimized parameters
+            # Add additional preprocessing steps
+            from sklearn.preprocessing import StandardScaler
+            from imblearn.over_sampling import SMOTE
+            from imblearn.pipeline import Pipeline as ImbPipeline
+
+            # Apply SMOTE for balanced classes
+            smote = SMOTE(random_state=42)
+            X_train_balanced, y_train_balanced = smote.fit_resample(
+                X_train_features, y_train
+            )
+
+            # Create models with better configurations
             models = self.create_ensemble_model()
             best_models = {}
             best_metrics = {}
@@ -280,45 +332,73 @@ class EnhancedModelTrainer:
                 random_state=42,
             )
 
-            # Calculate balanced sample weights
+            # Calculate balanced sample weights once
             sample_weights = compute_sample_weight("balanced", y_train)
+
+            # Calculate class weights once for all models
+            classes = np.unique(y_train)
+            class_weights = compute_class_weight(
+                class_weight="balanced", classes=classes, y=y_train
+            )
+            class_weight_dict = dict(zip(classes, class_weights))
+
+            # Configure better scoring metrics
+            scorers = {
+                "f1": make_scorer(f1_score, average="weighted", zero_division=1),
+                "precision": make_scorer(
+                    precision_score, average="weighted", zero_division=1
+                ),
+                "recall": make_scorer(
+                    recall_score, average="weighted", zero_division=1
+                ),
+                "balanced_accuracy": make_scorer(balanced_accuracy_score),
+                "roc_auc": make_scorer(roc_auc_score, multi_class="ovr"),
+            }
 
             # Train each model with optimized parameters
             for name, pipeline in models:
                 try:
                     self.logger.info(f"\nTraining {name} model...")
+
+                    # Modify param grid to include sample weight parameter for RF and SVM
                     model_params = {
                         k: v for k, v in self.param_grid.items() if k.startswith(name)
                     }
 
-                    # Optimized GridSearchCV
+                    # Add class weight as a fixed parameter
+                    if name == "rf":
+                        pipeline.named_steps["rf"].set_params(
+                            class_weight=class_weight_dict
+                        )
+                        fit_params = {"rf__sample_weight": sample_weights}
+                    elif name == "svm":
+                        pipeline.named_steps["svm"].set_params(
+                            class_weight=class_weight_dict
+                        )
+                        fit_params = {"svm__sample_weight": sample_weights}
+                    else:
+                        fit_params = {}
+
+                    # Configure GridSearchCV with proper scoring metrics
                     grid_search = GridSearchCV(
                         pipeline,
                         param_grid=model_params,
                         cv=cv,
-                        scoring={
-                            "f1": "f1_weighted",
-                            "precision": "precision_weighted",
-                            "recall": "recall_weighted",
-                        },
-                        refit="f1",
+                        scoring=scorers,  # Use custom scorers
+                        refit="balanced_accuracy",  # Use balanced accuracy for selection
                         n_jobs=-1,
                         verbose=1,
                         error_score="raise",
+                        return_train_score=True,  # Get training scores
                     )
 
-                    # Train with sample weights
+                    # Fit with appropriate parameters
                     with warnings.catch_warnings():
                         warnings.filterwarnings("ignore", category=Warning)
-                        grid_search.fit(
-                            X_train_features,
-                            y_train,
-                            **(
-                                {"sample_weight": sample_weights}
-                                if name != "nb"
-                                else {}
-                            ),
-                        )
+                        if fit_params:
+                            grid_search.fit(X_train_features, y_train, **fit_params)
+                        else:
+                            grid_search.fit(X_train_features, y_train)
 
                     # Track metrics
                     model_time = (datetime.now() - start_time).total_seconds()
@@ -340,13 +420,15 @@ class EnhancedModelTrainer:
                     self.logger.error(f"Error training {name}: {str(e)}")
                     continue
 
+            if not best_models:
+                raise ValueError("No models were successfully trained")
+
             # Save final model
-            if best_models:
-                final_metrics = {
-                    "models": best_metrics,
-                    "total_time": (datetime.now() - start_time).total_seconds(),
-                }
-                self.save_final_model(best_models, final_metrics)
+            final_metrics = {
+                "models": best_metrics,
+                "total_time": (datetime.now() - start_time).total_seconds(),
+            }
+            self.save_final_model(best_models, final_metrics)
 
             return best_models
 
@@ -411,3 +493,126 @@ class EnhancedModelTrainer:
         except Exception as e:
             self.logger.error(f"Error restoring checkpoint: {str(e)}")
             return None, None
+
+    def optimize_hyperparameters(self, X_train=None, y_train=None):
+        """Optimize hyperparameters using cross-validation"""
+        self.logger.info("Starting hyperparameter optimization...")
+
+        try:
+            # Use stored data if not provided
+            if X_train is None or y_train is None:
+                # Load last checkpoint to get data
+                checkpoints = self.list_checkpoints()
+                if not checkpoints:
+                    raise ValueError("No checkpoints found and no data provided")
+                checkpoint = joblib.load(
+                    os.path.join(self.checkpoint_dir, checkpoints[0]["filename"])
+                )
+                X_train = checkpoint.get("X_train")
+                y_train = checkpoint.get("y_train")
+
+            if X_train is None or y_train is None:
+                raise ValueError("No training data available")
+
+            # Extract features
+            if self.feature_extractor is None:
+                from src.features.feature_engineering import FeatureExtractor
+
+                self.feature_extractor = FeatureExtractor(self.language, self.config)
+
+            X_train_features = self.feature_extractor.extract_features(X_train)
+
+            # Define expanded parameter grid for optimization
+            expanded_param_grid = {
+                "rf__n_estimators": [300, 500, 1000],
+                "rf__max_depth": [30, 50, 100],
+                "rf__min_samples_split": [2, 5, 10],
+                "rf__min_samples_leaf": [1, 2, 4],
+                "rf__max_features": ["sqrt", "log2", None],
+                "svm__C": [0.1, 1.0, 10.0],
+                "svm__tol": [1e-4, 1e-5],
+                "svm__max_iter": [3000, 5000],
+                "nb__alpha": [0.01, 0.1, 0.5, 1.0],
+                "nb__fit_prior": [True, False],
+                "feature_selection__k": [300, 500, 1000],
+            }
+
+            # Configure cross-validation
+            cv = StratifiedKFold(
+                n_splits=self.config.MODEL_TRAINING_CONFIG["cv_folds"],
+                shuffle=True,
+                random_state=42,
+            )
+
+            # Initialize models
+            models = self.create_ensemble_model()
+            best_params = {}
+
+            # Optimize each model separately
+            for name, pipeline in models:
+                self.logger.info(f"\nOptimizing {name} model...")
+
+                # Get relevant parameters for this model
+                model_params = {
+                    k: v for k, v in expanded_param_grid.items() if k.startswith(name)
+                }
+
+                # Configure scoring
+                scorers = {
+                    "f1": make_scorer(f1_score, average="weighted", zero_division=1),
+                    "precision": make_scorer(
+                        precision_score, average="weighted", zero_division=1
+                    ),
+                    "recall": make_scorer(
+                        recall_score, average="weighted", zero_division=1
+                    ),
+                    "balanced_accuracy": make_scorer(balanced_accuracy_score),
+                }
+
+                # Perform grid search
+                grid_search = GridSearchCV(
+                    pipeline,
+                    param_grid=model_params,
+                    cv=cv,
+                    scoring=scorers,
+                    refit="balanced_accuracy",
+                    n_jobs=-1,
+                    verbose=1,
+                )
+
+                # Fit with sample weights if applicable
+                sample_weights = compute_sample_weight("balanced", y_train)
+                fit_params = {}
+                if name in ["rf", "svm"]:
+                    fit_params = {f"{name}__sample_weight": sample_weights}
+
+                grid_search.fit(X_train_features, y_train, **fit_params)
+
+                # Store best parameters
+                best_params[name] = {
+                    "params": grid_search.best_params_,
+                    "score": grid_search.best_score_,
+                }
+
+                self.logger.info(f"Best {name} parameters: {grid_search.best_params_}")
+                self.logger.info(f"Best {name} score: {grid_search.best_score_:.4f}")
+
+            # Save optimized parameters
+            optimization_path = os.path.join(
+                self.config.DATA_DIR,
+                "optimization",
+                f"{self.language}_optimized_params.json",
+            )
+            os.makedirs(os.path.dirname(optimization_path), exist_ok=True)
+
+            with open(optimization_path, "w") as f:
+                import json
+
+                json.dump(best_params, f, indent=4)
+
+            self.logger.info(f"Saved optimized parameters to {optimization_path}")
+            return best_params
+
+        except Exception as e:
+            self.logger.error(f"Hyperparameter optimization failed: {str(e)}")
+            return None

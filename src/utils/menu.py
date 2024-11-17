@@ -9,8 +9,11 @@ from rich.panel import Panel
 
 
 class TerminalMenu:
-    def __init__(self):
+    def __init__(self, config=None):
+        """Initialize TerminalMenu with configuration"""
+        from rich.console import Console
         self.console = Console()
+        self.config = config  # Store config object
         self.default_data_dir = os.path.join(
             os.path.dirname(
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -195,32 +198,41 @@ class TerminalMenu:
         print(f"Confidence: {confidence:.2f}")
         print("-" * 50)
 
-    def display_emotion_result(self, text: str, result: dict):
-        """Display sentiment and emotion analysis result"""
-        print("\nKết quả phân tích:")
-        print("-" * 50)
-        print(f"Văn bản: {text}")
-
-        # Display sentiment
-        sentiment_map = {0: "Tiêu cực", 1: "Trung tính", 2: "Tích cực"}
-        print(f"\nCảm xúc chung: {sentiment_map[result['sentiment']]}")
-        print(f"Độ tin cậy: {result['sentiment_confidence']:.2f}")
-
-        # Display detailed emotion
-        print(f"\nBiểu cảm chi tiết: {result['emotion_vi']} {result['emotion_emoji']}")
-        print(f"Độ tin cậy: {result['emotion_confidence']:.2f}")
-
-        # Display emotion scores if available
-        if result.get("emotion_scores"):
-            print("\nĐiểm số các biểu cảm:")
-            for emotion, score in sorted(
-                result["emotion_scores"].items(), key=lambda x: x[1], reverse=True
-            )[:3]:
-                emotion_vi = self.config.EMOTION_MAPPING[emotion]["vi"]
-                emoji = self.config.EMOTION_MAPPING[emotion]["emoji"]
-                print(f"- {emotion_vi} {emoji}: {score:.2f}")
-
-        print("-" * 50)
+    def display_emotion_result(self, text, emotion_result):
+        """Display emotion analysis results with proper config access"""
+        try:
+            self.console.print("\n[bold cyan]Analysis Results:[/bold cyan]")
+            self.console.print(f"Text: {text}")
+            
+            if emotion_result:
+                # Get sentiment label
+                sentiment = emotion_result.get('sentiment')
+                sentiment_conf = emotion_result.get('sentiment_confidence', 0)
+                
+                sentiment_label = "Tích cực" if sentiment == 2 else "Tiêu cực" if sentiment == 0 else "Trung tính"
+                self.console.print(f"\nCảm xúc chung: {sentiment_label}")
+                self.console.print(f"Độ tin cậy: {sentiment_conf:.2f}")
+                
+                # Display detailed emotion
+                emotion = emotion_result.get('emotion', '')
+                emotion_vi = emotion_result.get('emotion_vi', '')
+                emoji = emotion_result.get('emotion_emoji', '')
+                emotion_conf = emotion_result.get('emotion_confidence', 0)
+                
+                self.console.print(f"\nBiểu cảm chi tiết: {emotion_vi} {emoji}")
+                self.console.print(f"Độ tin cậy: {emotion_conf:.2f}")
+                
+                # Display emotion scores if available
+                if emotion_result.get('emotion_scores'):
+                    self.console.print("\nĐiểm số các biểu cảm:")
+                    for emotion, score in emotion_result['emotion_scores'].items():
+                        if score > 0:
+                            self.console.print(f"{emotion}: {score:.2f}")
+            else:
+                self.console.print("[red]Không thể phân tích cảm xúc[/red]")
+                
+        except Exception as e:
+            self.console.print(f"[red]Error displaying results: {str(e)}[/red]")
 
     def display_data_collection_menu(self):
         """Display data collection options"""

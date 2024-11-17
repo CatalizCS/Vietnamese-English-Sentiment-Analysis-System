@@ -13,7 +13,6 @@ import asyncio
 from datetime import datetime, timedelta
 import time
 
-from h11 import ConnectionClosed
 
 from src.utils.server_utils import force_kill_port, is_port_in_use, ConnectionManager
 
@@ -21,7 +20,7 @@ from src.utils.server_utils import force_kill_port, is_port_in_use, ConnectionMa
 project_root = os.path.dirname(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 )
-if (project_root not in sys.path):
+if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 # Update imports to be relative to src
@@ -55,6 +54,7 @@ from src.utils.logger import Logger
 from src.utils.metrics_store import MetricsStore
 from sklearn.metrics import accuracy_score, precision_score, recall_score
 
+
 # Add performance optimizations
 class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(self, app, calls: int, period: int):
@@ -74,8 +74,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             if reqs[-1] > now - self.period
         }
 
-        if (client_ip in self.requests):
-            if (len(self.requests[client_ip]) >= self.calls):
+        if client_ip in self.requests:
+            if len(self.requests[client_ip]) >= self.calls:
                 raise HTTPException(status_code=429, detail="Rate limit exceeded")
             self.requests[client_ip].append(now)
         else:
@@ -93,7 +93,7 @@ def get_cached_model(language: str):
 
 # Add dependency for language validation
 def validate_language(language: str = "vi"):
-    if (language not in ["vi", "en"]):
+    if language not in ["vi", "en"]:
         raise HTTPException(status_code=400, detail="Invalid language")
     return language
 
@@ -169,7 +169,7 @@ def load_model(language: str):
     """Load model for specified language and track loading time"""
     try:
         start_time = time.time()
-        if (models[language] is None):
+        if models[language] is None:
             feature_extractor = FeatureExtractor(language, config)
             predictor = SentimentPredictor(language, config)
             preprocessor = DataPreprocessor(language, config)
@@ -247,9 +247,10 @@ async def add_process_time_header(request: Request, call_next):
 def evaluate_model(language: str, true_labels: List[int], predictions: List[int]):
     """Evaluate model performance and update metrics"""
     accuracy = accuracy_score(true_labels, predictions)
-    precision = precision_score(true_labels, predictions, average='weighted')
-    recall = recall_score(true_labels, predictions, average='weighted')
+    precision = precision_score(true_labels, predictions, average="weighted")
+    recall = recall_score(true_labels, predictions, average="weighted")
     metrics_store.update_ml_metrics(language, accuracy, precision, recall)
+
 
 @app.post("/predict")
 async def predict(request: TextRequest, language: str = Depends(validate_language)):
@@ -257,7 +258,7 @@ async def predict(request: TextRequest, language: str = Depends(validate_languag
     start_time = time.time()
 
     try:
-        if (not request.text.strip()):
+        if not request.text.strip():
             raise HTTPException(status_code=400, detail="Empty text")
 
         # Get cached model
@@ -271,16 +272,14 @@ async def predict(request: TextRequest, language: str = Depends(validate_languag
             processed_df = model["preprocessor"].preprocess(df)
             features = model["extractor"].extract_features(processed_df["cleaned_text"])
             prediction_start = time.time()
-            result = model["predictor"].predict_emotion(features, request.text)
-            inference_time = time.time() - prediction_start
-            metrics_store.update_inference_time(language, inference_time)  # Updated method call
 
-            # Example: Update ML metrics if true labels are available
-            # true_label = get_true_label(request.text)  # Implement this function as needed
-            # if (true_label is not None):
-            #     predictions = [result["sentiment"]]
-            #     true_labels = [true_label]
-            #     metrics_store.update_ml_metrics(language, accuracy_score=true_label, precision_score=precision_score(true_label), recall_score=recall_score=true_label)  # Updated method call
+            # Create coroutine for prediction
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, model["predictor"].predict_emotion, features, request.text
+            )
+
+            inference_time = time.time() - prediction_start
+            metrics_store.update_inference_time(language, inference_time)
 
         except Exception as e:
             logger.error(f"Processing error: {str(e)}")
@@ -300,7 +299,9 @@ async def predict(request: TextRequest, language: str = Depends(validate_languag
         }
 
         # Update metrics asynchronously
-        asyncio.create_task(metrics_store.update_processing_time(response["processing_time"]))  # Updated method call
+        asyncio.create_task(
+            metrics_store.update_processing_time(response["processing_time"])
+        )
 
         return response
 
@@ -318,7 +319,7 @@ async def batch_predict(request: BatchRequest):
 
     try:
         # Validate language
-        if (request.language not in ["vi", "en"]):
+        if request.language not in ["vi", "en"]:
             raise HTTPException(status_code=400, detail="Language must be 'vi' or 'en'")
 
         # Load model components
@@ -328,7 +329,7 @@ async def batch_predict(request: BatchRequest):
         df = pd.DataFrame({"text": request.texts})
         processed_df = model["preprocessor"].preprocess(df)
 
-        if (processed_df.empty):
+        if processed_df.empty:
             raise HTTPException(status_code=400, detail="Text preprocessing failed")
 
         # Extract features
@@ -398,9 +399,9 @@ async def health_check():
             "timestamp": datetime.now().isoformat(),
             "models": {
                 lang: ModelInfo(
-                    loaded=bool(models[lang]),
-                    info=config.MODEL_INFO.get(lang, {})
-                ) for lang in ["vi", "en"]
+                    loaded=bool(models[lang]), info=config.MODEL_INFO.get(lang, {})
+                )
+                for lang in ["vi", "en"]
             },
             "metrics": {
                 "requests": len(metrics_store["requests"]),
@@ -441,7 +442,7 @@ async def shutdown():
         async def shutdown_server():
             await asyncio.sleep(1)
             # Kill the current process
-            if (sys.platform == "win32"):
+            if sys.platform == "win32":
                 subprocess.run(["taskkill", "/F", "/PID", str(pid)])
             else:
                 os.kill(pid, signal.SIGTERM)
@@ -485,7 +486,7 @@ def start_new_terminal():
         ]
 
         # Platform-specific commands
-        if (sys.platform == "win32"):
+        if sys.platform == "win32":
             # Windows: use 'start' command
             full_command = [
                 "cmd",
@@ -497,7 +498,7 @@ def start_new_terminal():
             ]
             subprocess.Popen(full_command, shell=True, env=env, cwd=project_root)
 
-        elif (sys.platform == "darwin"):
+        elif sys.platform == "darwin":
             # macOS: use AppleScript to open Terminal
             apple_script = [
                 "osascript",
@@ -524,7 +525,7 @@ def start_new_terminal():
                 except FileNotFoundError:
                     continue
 
-            if (not success):
+            if not success:
                 raise RuntimeError("No suitable terminal emulator found")
 
         logger.info("API server started in new terminal window")
@@ -540,7 +541,7 @@ def start_api_server(host="0.0.0.0", port=7270):
     global server_process
     try:
         # Kill any existing process using the port
-        if (is_port_in_use(port)):
+        if is_port_in_use(port):
             force_kill_port(port)
             time.sleep(1)  # Wait for port to be freed
 
@@ -576,7 +577,7 @@ def start_api_server(host="0.0.0.0", port=7270):
 
         # Verify server started successfully
         time.sleep(2)
-        if (server_process.poll() is not None):
+        if server_process.poll() is not None:
             stderr = server_process.stderr.read()
             raise RuntimeError(f"Server failed to start: {stderr}")
 
@@ -592,7 +593,7 @@ def stop_api_server():
     """Stop the API server subprocess"""
     global server_process
     try:
-        if (server_process and server_process.poll() is None):
+        if server_process and server_process.poll() is None:
             server_process.terminate()
             server_process.wait(timeout=5)
             logger.info(
@@ -633,10 +634,10 @@ def get_api_status():
 
         for conn in connections:
             try:
-                if (hasattr(conn, "laddr") and (conn.laddr.port in target_ports)):
+                if hasattr(conn, "laddr") and (conn.laddr.port in target_ports):
                     # Get process info
                     proc = psutil.Process(conn.pid)
-                    if ("python" in proc.name().lower()):
+                    if "python" in proc.name().lower():
                         server_running = True
                         break
             except (psutil.NoSuchProcess, psutil.AccessDenied, AttributeError):
@@ -696,6 +697,7 @@ async def dashboard(request: Request):
 # Initialize connection manager
 manager = ConnectionManager()
 
+
 @app.websocket("/ws/metrics")
 async def metrics_websocket(websocket: WebSocket):
     await manager.connect(websocket)
@@ -707,14 +709,13 @@ async def metrics_websocket(websocket: WebSocket):
             send_task = asyncio.create_task(send_metrics(websocket))
 
             done, pending = await asyncio.wait(
-                [receive_task, send_task],
-                return_when=asyncio.FIRST_COMPLETED
+                [receive_task, send_task], return_when=asyncio.FIRST_COMPLETED
             )
 
             if receive_task in done:
                 message = receive_task.result()
                 data = json.loads(message)
-                
+
                 if data.get("type") == "heartbeat":
                     await websocket.send_text(json.dumps({"type": "heartbeat_ack"}))
                     # Cancel send_task to prevent duplication
@@ -736,30 +737,49 @@ async def metrics_websocket(websocket: WebSocket):
         logger.error(f"WebSocket error: {e}")
         await manager.disconnect(websocket)
 
+
 async def send_metrics(websocket: WebSocket):
-    # Send metrics to the client
-    metrics = {
-        "type": "metrics",
-        "cpu_usage": psutil.cpu_percent(interval=0.5),
-        "memory_usage": {
-            "percent": psutil.virtual_memory().percent,
-            "used": psutil.virtual_memory().used,
-            "total": psutil.virtual_memory().total
-        },
-        "requests_per_sec": metrics_store.get_requests_per_sec(config.DASHBOARD_CONFIG["update_interval"]),
-        "avg_response_time": metrics_store.get_avg_response_time() if metrics_store.response_times else 0,
-        "model_status": {
-            lang: {
-                "loaded": models[lang] is not None,
-                "info": config.MODEL_INFO.get(lang, {}),
-                "performance": metrics_store.get_model_performance().get(lang, {})
-            } for lang in ["vi", "en"]
-        },
-        "total_requests": metrics_store.total_requests,
-        "total_errors": metrics_store.total_errors
-    }
-    await websocket.send_text(json.dumps(metrics))
-    await asyncio.sleep(1)
+    while True:
+        try:
+            # Send metrics to the client
+            metrics = {
+                "type": "metrics",
+                "cpu_usage": psutil.cpu_percent(interval=0.5),
+                "memory_usage": {
+                    "percent": psutil.virtual_memory().percent,
+                    "used": psutil.virtual_memory().used,
+                    "total": psutil.virtual_memory().total,
+                },
+                "requests_per_sec": metrics_store.get_requests_per_sec(
+                    config.DASHBOARD_CONFIG["update_interval"]
+                ),
+                "avg_response_time": (
+                    metrics_store.get_avg_response_time()
+                    if metrics_store.response_times
+                    else 0
+                ),
+                "model_status": {
+                    lang: {
+                        "loaded": models[lang] is not None,
+                        "info": config.MODEL_INFO.get(lang, {}),
+                        "performance": metrics_store.get_model_performance().get(
+                            lang, {}
+                        ),
+                    }
+                    for lang in ["vi", "en"]
+                },
+                "total_requests": metrics_store.total_requests,
+                "total_errors": metrics_store.total_errors,
+            }
+            await websocket.send_text(json.dumps(metrics))
+            await asyncio.sleep(1)
+        except WebSocketDisconnect:
+            logger.info("WebSocket client disconnected.")
+            break
+        except Exception as e:
+            logger.error(f"Error sending metrics: {e}")
+            break
+
 
 @app.get("/api/metrics/summary")
 async def get_metrics_summary():
@@ -775,10 +795,7 @@ async def metrics_middleware(request: Request, call_next):
     process_time = time.time() - start_time
 
     # Update metrics with process time and error status
-    metrics_store.update_metrics(
-        process_time, 
-        is_error=(response.status_code >= 400)
-    )
+    metrics_store.update_metrics(process_time, is_error=(response.status_code >= 400))
 
     return response
 
@@ -795,7 +812,7 @@ async def get_server_logs(
     """Enhanced log retrieval with more filtering options"""
     try:
         log_file = pathlib.Path(config.LOG_FILE)
-        if (not log_file.exists()):
+        if not log_file.exists():
             return {"logs": [], "message": "No log file found"}
 
         # Read log file
@@ -806,26 +823,26 @@ async def get_server_logs(
         for log in logs:
             try:
                 # Apply filters
-                if (type != "all"):
-                    if ((type == "init") and ("API Server" not in log)):
+                if type != "all":
+                    if (type == "init") and ("API Server" not in log):
                         continue
-                    if ((type == "request") and ("Request:" not in log)):
+                    if (type == "request") and ("Request:" not in log):
                         continue
 
-                if (path and (path not in log)):
+                if path and (path not in log):
                     continue
 
-                if (status_code and (f"Status: {status_code}" not in log)):
+                if status_code and (f"Status: {status_code}" not in log):
                     continue
 
-                if ((level != "all") and (f"[{level.upper()}]" not in log)):
+                if (level != "all") and (f"[{level.upper()}]" not in log):
                     continue
 
-                if (since):
+                if since:
                     try:
                         log_time = datetime.fromisoformat(log.split()[0])
                         since_time = datetime.fromisoformat(since)
-                        if (log_time < since_time):
+                        if log_time < since_time:
                             continue
                     except:
                         pass
@@ -878,7 +895,7 @@ async def timeout_middleware(request: Request, call_next):
         for task in pending:
             task.cancel()
 
-        if (response_task in done):
+        if response_task in done:
             return await response_task
         else:
             raise HTTPException(status_code=408, detail="Request timeout")
@@ -900,7 +917,7 @@ async def periodic_health_check():
         try:
             await asyncio.sleep(30)  # Check every 30 seconds
             status = await health_check()
-            if (status["status"] != "healthy"):
+            if status["status"] != "healthy":
                 logger.warning("Unhealthy state detected, reloading models...")
                 # Reload models
                 models["vi"] = None
@@ -932,7 +949,7 @@ async def startup_event():
         # Log available endpoints
         routes = []
         for route in app.routes:
-            if (hasattr(route, "methods")):
+            if hasattr(route, "methods"):
                 routes.append(f"{route.methods} {route.path}")
         logger.info(f"Registered Routes:\n" + "\n".join(routes))
 
@@ -986,7 +1003,7 @@ async def log_requests(request: Request, call_next):
 
     try:
         # Get request body for POST/PUT requests
-        if (method in ["POST", "PUT"]):
+        if method in ["POST", "PUT"]:
             body = await request.json()
             logger.info(f"Request Body: {json.dumps(body, ensure_ascii=False)}")
     except:
@@ -1012,7 +1029,7 @@ async def log_requests(request: Request, call_next):
 if __name__ == "__main__":
     # Run with uvicorn directly when script is executed
     import uvicorn
-    
+
     port = 7270
     uvicorn.run(
         "app:app",
@@ -1027,7 +1044,7 @@ if __name__ == "__main__":
         # Add valid websocket configurations
         websocket_ping_interval=20,
         websocket_ping_timeout=30,
-        limit_max_requests=None
+        limit_max_requests=None,
     )
 
 # Export necessary functions
@@ -1039,5 +1056,5 @@ __all__ = [
     "get_api_status",
     "get_cached_model",
     "validate_language",
-    "update_metrics"
+    "update_metrics",
 ]

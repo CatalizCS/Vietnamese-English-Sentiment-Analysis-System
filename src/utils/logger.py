@@ -15,9 +15,9 @@ class Logger:
         )
         console_handler.setFormatter(console_formatter)
         
-        # File handler
+        # File handler with utf-8 encoding
         file_handler = RotatingFileHandler(
-            log_file, maxBytes=1024*1024, backupCount=5
+            log_file, maxBytes=1024*1024, backupCount=5, encoding='utf-8'
         )
         file_handler.setLevel(logging.INFO)
         file_formatter = logging.Formatter(
