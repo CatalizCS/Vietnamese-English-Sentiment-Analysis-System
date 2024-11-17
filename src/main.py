@@ -116,24 +116,28 @@ def train(language: str, config: Config):
         training_time = (datetime.now() - start_time).total_seconds()
 
         # Get metrics for best performing model
-        best_model_name = max(model.items(), key=lambda x: getattr(x[1], 'best_score_', 0))[0]
+        best_model_name = max(
+            model.items(), key=lambda x: getattr(x[1], "best_score_", 0)
+        )[0]
         best_model = model[best_model_name]
 
         # Evaluate on test set
         X_test, y_test = data_loader.get_features_and_labels(test_df)
         X_test_features = feature_extractor.extract_features(X_test)
-        
+
         # Calculate metrics using the best model
         test_score = best_model.score(X_test_features, y_test)
-        
+
         final_metrics = {
             "test_score": test_score,
             "best_model": best_model_name,
             "training_time": training_time,
         }
 
-        if hasattr(best_model, 'feature_importances_'):
-            final_metrics["feature_importance"] = best_model.feature_importances_.tolist()
+        if hasattr(best_model, "feature_importances_"):
+            final_metrics["feature_importance"] = (
+                best_model.feature_importances_.tolist()
+            )
 
         # Save final model with metrics
         model_trainer.save_final_model(model, final_metrics)
@@ -141,7 +145,7 @@ def train(language: str, config: Config):
         logger.info("Training completed successfully")
         logger.info(f"Total training time: {training_time:.2f} seconds")
         logger.info(f"Best model: {best_model_name} with test score: {test_score:.4f}")
-        
+
         return model
 
     except Exception as e:
@@ -337,33 +341,25 @@ def display_metrics(language: str, config: Config):
 
         # Load model info
         model_info = joblib.load(model_path)
-        print("\nModel Info Structure:", model_info.keys())  # Debug info
 
         # Print basic info
         print("\n=== Model Performance Metrics ===")
         print(f"Language: {language.upper()}")
-        print(f"Timestamp: {model_info.get('config', {}).get('timestamp', 'N/A')}")
 
-        # Extract metrics with proper validation
+        # Extract metrics
         if "metrics" not in model_info:
-            print("No metrics found in model_info")
-            print("Available keys:", model_info.keys())
             raise ValueError("No metrics found in model")
 
         metrics = model_info["metrics"]
-        print("\nMetrics Structure:", metrics.keys())  # Debug info
 
-        # Extract scores and times
+        # Extract scores
         scores = []
-        times = []
         model_names = []
 
         if isinstance(metrics, dict):
             model_data = metrics.get("models", {})
             if not model_data:
                 model_data = {"base_model": metrics}
-
-            print("\nProcessing models:", list(model_data.keys()))  # Debug info
 
             for model_name, model_metrics in model_data.items():
                 if isinstance(model_metrics, dict):
@@ -379,32 +375,18 @@ def display_metrics(language: str, config: Config):
                             score = float(model_metrics[score_key])
                             break
 
-                    time = float(model_metrics.get("training_time", 0))
-
                     if score is not None:
                         scores.append(score)
-                        times.append(time)
                         model_names.append(model_name)
-
-                        # Print detailed metrics
-                        print(f"\n{model_name.upper()} Model:")
-                        print(f"Score: {score:.4f}")
-                        print(f"Training Time: {time:.2f}s")
-
-                        if "parameters" in model_metrics:
-                            print("Parameters:")
-                            for param, value in model_metrics["parameters"].items():
-                                print(f"  {param}: {value}")
+                        print(f"\n{model_name.upper()} Score: {score:.4f}")
 
         if not scores:
-            print("\nNo scores found in metrics structure:")
-            print("Model data:", model_data)  # Debug info
             raise ValueError("No valid scores found in metrics")
 
-        # Rest of the visualization code...
-        plt.figure(figsize=(15, 8))
+        # Create simple bar plot of scores
+        plt.figure(figsize=(15, 5))
 
-        # Score comparison plot
+        # Plot 1: Model Scores
         plt.subplot(1, 2, 1)
         bars = plt.bar(range(len(scores)), scores, color=["blue", "green", "red"])
         plt.xticks(range(len(model_names)), model_names, rotation=45)
@@ -422,59 +404,56 @@ def display_metrics(language: str, config: Config):
                 ha="center",
             )
 
-        # Time comparison plot
-        if any(times):
-            plt.subplot(1, 2, 2)
-            bars = plt.bar(
-                range(len(times)), times, color=["lightblue", "lightgreen", "pink"]
-            )
-            plt.xticks(range(len(model_names)), model_names, rotation=45)
-            plt.title("Training Time Comparison")
-            plt.xlabel("Models")
-            plt.ylabel("Time (seconds)")
+        # Plot 2: Overtraining Analysis
+        plt.subplot(1, 2, 2)
+        has_data = False
 
-            # Add time labels
-            for bar, time in zip(bars, times):
-                plt.text(
-                    bar.get_x() + bar.get_width() / 2,
-                    time + max(times) * 0.02,
-                    f"{time:.1f}s",
-                    ha="center",
-                )
+        # Kiểm tra dữ liệu training history
+        if isinstance(metrics, dict):
+            # Thử lấy từ các vị trí có thể
+            history_sources = [
+                metrics.get('training_history', {}),
+                metrics.get('models', {}),
+            ]
 
-        # Add overtraining analysis
-        if isinstance(metrics, dict) and "models" in metrics:
-            plt.figure(figsize=(15, 5))
-            
-            # Original performance plots
-            plt.subplot(1, 3, 1)
-            # ... existing performance plots code ...
+            for history in history_sources:
+                if history:  # Nếu không rỗng
+                    for model_name, model_data in history.items():
+                        if isinstance(model_data, dict):
+                            train_scores = model_data.get('train_scores', [])
+                            valid_scores = model_data.get('valid_scores', [])
 
-            plt.subplot(1, 3, 2)
-            # ... existing time plots code ...
+                            if train_scores and valid_scores:  # Nếu có dữ liệu
+                                has_data = True
+                                epochs = range(1, len(train_scores) + 1)
+                                
+                                # Plot with different colors for each model
+                                train_line, = plt.plot(epochs, train_scores, 'o-', 
+                                    label=f'{model_name}_train', alpha=0.7)
+                                val_line, = plt.plot(epochs, valid_scores, 's--', 
+                                    label=f'{model_name}_val', alpha=0.7)
 
-            # Add overtraining analysis with proper legend handling
-            plt.subplot(1, 3, 3)
-            legend_added = False
-            for model_name, model_metrics in metrics["models"].items():
-                if "train_scores" in model_metrics and "valid_scores" in model_metrics:
-                    train_scores = model_metrics["train_scores"]
-                    valid_scores = model_metrics["valid_scores"]
-                    epochs = range(1, len(train_scores) + 1)
+                                # Print scores for debugging
+                                print(f"\n{model_name} Training History:")
+                                print(f"Training scores: {[f'{score:.4f}' for score in train_scores]}")
+                                print(f"Validation scores: {[f'{score:.4f}' for score in valid_scores]}")
                     
-                    # Add explicit labels
-                    plt.plot(epochs, train_scores, 'o-', label=f'{model_name}_train')
-                    plt.plot(epochs, valid_scores, 's-', label=f'{model_name}_val')
-                    legend_added = True
-            
+                    if has_data:
+                        break  # Nếu đã tìm thấy dữ liệu, không cần kiểm tra nguồn khác
+
+        # Cấu hình plot
+        if has_data:
             plt.title('Training vs Validation Performance')
             plt.xlabel('Epochs')
             plt.ylabel('Score')
-            # Only add legend if we plotted something
-            if legend_added:
-                plt.legend(loc='upper right')
-            plt.grid(True)
-            
+            plt.legend(loc='lower right')
+            plt.grid(True, alpha=0.3)
+            plt.ylim(0, 1)
+        else:
+            plt.text(0.5, 0.5, 'No training history available',
+                    ha='center', va='center', fontsize=12, color='red')
+            print("Warning: No training history found in metrics")
+
         plt.tight_layout()
         plt.savefig(metrics_img_path, dpi=300, bbox_inches="tight")
         plt.show()
@@ -484,10 +463,6 @@ def display_metrics(language: str, config: Config):
     except Exception as e:
         logger.error(f"Error displaying metrics: {str(e)}")
         print(f"Error: Could not display metrics: {str(e)}")
-        import traceback
-
-        print("\nFull error traceback:")
-        print(traceback.format_exc())
 
 
 def handle_data_collection(menu, language, config):
@@ -1306,7 +1281,9 @@ def display_server_logs(menu, config, params=None):
 def get_server_logs(port, lines=1000):
     """Fetch server logs from the API"""
     try:
-        response = requests.get(f"http://localhost:{port}/api/logs", params={"lines": lines})
+        response = requests.get(
+            f"http://localhost:{port}/api/logs", params={"lines": lines}
+        )
         if response.status_code == 200:
             return response.json()["logs"]
         else:
@@ -1315,13 +1292,14 @@ def get_server_logs(port, lines=1000):
         logger.error(f"Error fetching server logs: {e}")
         return []
 
+
 def main():
     # Initialize config first
     config = Config()
-    
+
     # Pass config to TerminalMenu
     menu = TerminalMenu(config)
-    
+
     # Only cleanup when starting the program
     cleanup_api_servers()
 

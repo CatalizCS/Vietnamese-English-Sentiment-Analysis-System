@@ -2,6 +2,7 @@ import os
 import joblib
 from datetime import datetime
 import warnings
+import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.svm import LinearSVC
 from sklearn.naive_bayes import MultinomialNB
@@ -54,27 +55,35 @@ class EnhancedModelTrainer:
         os.makedirs(self.models_dir, exist_ok=True)
         self.training_time = 0
         self.feature_extractor = None  # Initialize feature extractor as None
-        self.param_grid = {
-            "rf__n_estimators": [200, 300],
-            "rf__max_depth": [20, 30],
-            "svm__C": [0.1, 1.0, 10.0],
-            "nb__alpha": [0.1, 0.5, 1.0],
-        }
+        self.param_grid = config.PARAM_GRID
+        self.model_config = config.MODEL_TRAINING_CONFIG
+        self.regularization_config = config.REGULARIZATION_CONFIG
+        self.validation_config = config.VALIDATION_CONFIG
+        self.scoring_config = config.SCORING_CONFIG
 
     def create_ensemble_model(self):
         """Create model ensemble with documented algorithms"""
 
         rf = RandomForestClassifier(
-            n_estimators=300,
-            max_depth=30,
-            min_samples_split=2,
-            class_weight="balanced",
+            n_estimators=self.param_grid["rf__n_estimators"][0],
+            max_depth=self.param_grid["rf__max_depth"][0],
+            min_samples_split=self.model_config["preprocessing"]["min_df"],
+            class_weight=self.model_config["class_weight_method"],
+            ccp_alpha=self.regularization_config["rf_reg"]["ccp_alpha"],
+            max_samples=self.regularization_config["rf_reg"]["max_samples"],
             random_state=42,
         )
 
-        svm = LinearSVC(C=1.0, max_iter=5000, class_weight="balanced", dual=False)
+        svm = SVMWithProba(
+            C=self.param_grid["svm__C"][0],
+            max_iter=1000,
+            class_weight="balanced",
+            kernel=self.regularization_config["svm_reg"]["kernel"],
+            shrinking=self.regularization_config["svm_reg"]["shrinking"],
+            dual=False,
+        )
 
-        nb = MultinomialNB(alpha=0.1, fit_prior=True)
+        nb = MultinomialNB(alpha=self.param_grid["nb__alpha"][0], fit_prior=True)
 
         models = [
             ("rf", Pipeline([("scaler", MinMaxScaler()), ("rf", rf)])),
@@ -150,7 +159,7 @@ class EnhancedModelTrainer:
 
         model_info = {
             "model": model,
-            "metrics": model_metrics,
+            "metrics": metrics,  # Save complete metrics including training history
             "feature_extractor": {
                 "vectorizer": self.feature_extractor.tfidf,
                 "svd": self.feature_extractor.svd,
@@ -170,44 +179,138 @@ class EnhancedModelTrainer:
         self.logger.info(f"Saved final model to {model_path}")
 
     def plot_training_progress(self, grid_search, X_test=None, y_test=None):
-        """Visualizes the training progress and model performance"""
-        plt.figure(figsize=(15, 5))
-
+        """Visualizes training progress and performance metrics"""
         try:
-            # Performance comparison subplot
-            plt.subplot(1, 3, 1)
-            # ... existing performance plot code ...
+            # Create figure with 3 subplots
+            fig = plt.figure(figsize=(20, 6))
 
-            # Time comparison subplot
-            plt.subplot(1, 3, 2)
-            # ... existing time plot code ...
+            # 1. Model Performance Comparison
+            ax1 = plt.subplot(131)
+            scores = []
+            names = []
 
-            # Training vs Validation subplot
-            plt.subplot(1, 3, 3)
-            legend_added = False
+            for name, model in grid_search.items():
+                # Get all available scores
+                train_f1 = np.mean(model.cv_results_["mean_train_f1"])
+                val_f1 = np.mean(model.cv_results_["mean_test_f1"])
+                test_score = None
+                if X_test is not None and y_test is not None:
+                    test_score = f1_score(
+                        y_test, model.predict(X_test), average="weighted"
+                    )
 
-            if isinstance(grid_search, dict):
-                for name, model in grid_search.items():
-                    if hasattr(model, "cv_results_"):
-                        train_scores = model.cv_results_["mean_train_score"]
-                        valid_scores = model.cv_results_["mean_test_score"]
-                        iterations = range(1, len(train_scores) + 1)
+                scores.append(
+                    {"train": train_f1, "validation": val_f1, "test": test_score}
+                )
+                names.append(name)
 
-                        plt.plot(iterations, train_scores, "o-", label=f"{name}_train")
-                        plt.plot(iterations, valid_scores, "s-", label=f"{name}_val")
-                        legend_added = True
+            # Plot grouped bar chart
+            x = np.arange(len(names))
+            width = 0.25
 
-            if legend_added:
-                plt.title("Training vs Validation Performance")
-                plt.xlabel("Parameter Combinations")
-                plt.ylabel("Score")
-                plt.legend(loc="upper right")
-                plt.grid(True)
+            ax1.bar(
+                x - width,
+                [s["train"] for s in scores],
+                width,
+                label="Train",
+                color="skyblue",
+            )
+            ax1.bar(
+                x,
+                [s["validation"] for s in scores],
+                width,
+                label="Validation",
+                color="lightgreen",
+            )
+            if all(s["test"] is not None for s in scores):
+                ax1.bar(
+                    x + width,
+                    [s["test"] for s in scores],
+                    width,
+                    label="Test",
+                    color="salmon",
+                )
+
+            ax1.set_ylabel("F1 Score")
+            ax1.set_title("Model Performance Comparison")
+            ax1.set_xticks(x)
+            ax1.set_xticklabels(names)
+            ax1.legend()
+            ax1.grid(True, alpha=0.3)
+
+            # 2. Learning Curves
+            ax2 = plt.subplot(132)
+            for name, model in grid_search.items():
+                train_scores = model.cv_results_["mean_train_f1"]
+                val_scores = model.cv_results_["mean_test_f1"]
+                epochs = range(1, len(train_scores) + 1)
+
+                ax2.plot(epochs, train_scores, "o-", label=f"{name}_train", alpha=0.7)
+                ax2.plot(epochs, val_scores, "s--", label=f"{name}_val", alpha=0.7)
+
+            ax2.set_xlabel("Epochs")
+            ax2.set_ylabel("F1 Score")
+            ax2.set_title("Learning Curves")
+            ax2.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+            ax2.grid(True, alpha=0.3)
+
+            # 3. Model Performance Details
+            ax3 = plt.subplot(133)
+            details = []
+            metrics = ["precision", "recall", "f1"]
+
+            for name, model in grid_search.items():
+                row = [name]
+                for metric in metrics:
+                    train_score = np.mean(model.cv_results_[f"mean_train_{metric}"])
+                    val_score = np.mean(model.cv_results_[f"mean_test_{metric}"])
+                    row.extend([train_score, val_score])
+                details.append(row)
+
+            # Create table
+            cell_text = [
+                [f"{x:.3f}" if isinstance(x, float) else x for x in row]
+                for row in details
+            ]
+            columns = ["Model"] + sum([[f"{m}_train", f"{m}_val"] for m in metrics], [])
+            table = ax3.table(cellText=cell_text, colLabels=columns, loc="center")
+            table.auto_set_font_size(False)
+            table.set_fontsize(9)
+            table.scale(1.2, 1.5)
+            ax3.axis("off")
+            ax3.set_title("Detailed Metrics")
 
             plt.tight_layout()
+            return fig
 
         except Exception as e:
             self.logger.error(f"Error plotting training progress: {str(e)}")
+            import traceback
+
+            print(traceback.format_exc())
+            return None
+
+    def _plot_learning_curves(self, grid_search):
+        """Plot learning curves showing training vs validation performance"""
+        if isinstance(grid_search, dict):
+            for name, model in grid_search.items():
+                if hasattr(model, "cv_results_"):
+                    train_scores = model.cv_results_["mean_train_f1"]
+                    valid_scores = model.cv_results_["mean_test_f1"]
+                    iterations = range(1, len(train_scores) + 1)
+
+                    plt.plot(
+                        iterations, train_scores, "o-", label=f"{name}_train", alpha=0.8
+                    )
+                    plt.plot(
+                        iterations, valid_scores, "s-", label=f"{name}_val", alpha=0.8
+                    )
+
+            plt.title("Learning Curves")
+            plt.xlabel("Parameter Combination")
+            plt.ylabel("F1 Score")
+            plt.legend(loc="center right")
+            plt.grid(True)
 
     def train_with_grid_search(self, X_train, y_train):
         """Train with documented evaluation metrics"""
@@ -248,6 +351,13 @@ class EnhancedModelTrainer:
             # K-fold CV as documenteds
             cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
+            if isinstance(y_train, pd.Series):
+                y_train = y_train.to_numpy()
+            if isinstance(X_train, pd.Series):
+                X_train = X_train.to_numpy()
+
+            X_train_features = self.feature_extractor.extract_features(X_train)
+
             # Initialize dictionaries to store training history
             training_history = {}
 
@@ -261,52 +371,69 @@ class EnhancedModelTrainer:
                 try:
                     self.logger.info(f"\nTraining {name} model...")
 
-                    # Simple grid search
-                    grid_search = GridSearchCV(
-                        pipeline,
-                        {
-                            k: v
-                            for k, v in self.param_grid.items()
-                            if k.startswith(name)
-                        },
-                        cv=cv,
-                        n_jobs=-1,
-                        verbose=1,
-                        scoring=scorers,
-                        refit="f1",  # Use F1 instead of ROC-AUC
-                        return_train_score=True,  # Important: Get training scores
+                    # Get training scores for each fold
+                    num_epochs = 5  # Number of CV folds
+                    train_scores = []
+                    valid_scores = []
+
+                    # Create cross-validation splits
+                    cv = StratifiedKFold(
+                        n_splits=num_epochs, shuffle=True, random_state=42
                     )
 
-                    # Add custom predict_proba for SVM if needed
-                    if name == "svm":
+                    # Manual cross-validation loop
+                    for fold, (train_idx, val_idx) in enumerate(
+                        cv.split(X_train_features, y_train)
+                    ):
+                        # Split data - using numpy indexing
+                        X_train_fold = X_train_features[train_idx]
+                        X_val_fold = X_train_features[val_idx]
+                        y_train_fold = y_train[train_idx]
+                        y_val_fold = y_train[val_idx]
 
-                        pipeline.steps[-1] = (
-                            name,
-                            SVMWithProba(**pipeline.steps[-1][1].get_params()),
+                        # Train model
+                        pipeline.fit(X_train_fold, y_train_fold)
+
+                        # Get scores using weighted F1
+                        train_score = f1_score(
+                            y_train_fold,
+                            pipeline.predict(X_train_fold),
+                            average="weighted",
+                        )
+                        val_score = f1_score(
+                            y_val_fold, pipeline.predict(X_val_fold), average="weighted"
                         )
 
-                    # Train model
-                    grid_search.fit(X_train_features, y_train)
+                        train_scores.append(train_score)
+                        valid_scores.append(val_score)
 
-                    # Get training and validation scores for f1 metric
-                    cv_results = grid_search.cv_results_
-                    train_f1_scores = cv_results["mean_train_f1"]
-                    valid_f1_scores = cv_results["mean_test_f1"]
+                        self.logger.info(
+                            f"Fold {fold+1}/{num_epochs} - "
+                            f"Train: {train_score:.4f}, Val: {val_score:.4f}"
+                        )
 
-                    # Store best model and metrics
-                    best_models[name] = grid_search.best_estimator_
+                    # Store training history
+                    training_history[name] = {
+                        "train_scores": train_scores,
+                        "valid_scores": valid_scores,
+                        "epochs": range(1, num_epochs + 1),
+                    }
+
+                    # Final training on full dataset
+                    pipeline.fit(X_train_features, y_train)
+                    best_models[name] = pipeline
                     best_metrics[name] = {
-                        "best_score": grid_search.best_score_,
+                        "best_score": np.max(valid_scores),
                         "training_time": (datetime.now() - start_time).total_seconds(),
-                        "train_scores": train_f1_scores.tolist(),
-                        "valid_scores": valid_f1_scores.tolist(),
-                        "params": grid_search.best_params_,
+                        "train_scores": train_scores,
+                        "valid_scores": valid_scores,
+                        "epochs": range(1, num_epochs + 1),
                     }
 
                     self.logger.info(
-                        f"{name} Best score: {grid_search.best_score_:.4f}\n"
-                        f"Best training score: {np.max(train_f1_scores):.4f}\n"
-                        f"Best validation score: {np.max(valid_f1_scores):.4f}"
+                        f"{name} Final Scores:\n"
+                        f"Best validation score: {np.max(valid_scores):.4f}\n"
+                        f"Final training score: {train_scores[-1]:.4f}"
                     )
 
                 except Exception as e:
@@ -320,7 +447,13 @@ class EnhancedModelTrainer:
             final_metrics = {
                 "models": best_metrics,
                 "total_time": (datetime.now() - start_time).total_seconds(),
-                "training_history": training_history,
+                "training_history": training_history,  # Include full training history
+                "feature_importance": getattr(
+                    best_models["rf"], "feature_importances_", None
+                ),
+                "validation_scores": {
+                    "precision": self.scoring_config["precision_zero_division"]
+                },
             }
             self.save_final_model(best_models, final_metrics)
 
