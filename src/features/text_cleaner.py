@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from underthesea import word_tokenize  # For Vietnamese
 from nltk.tokenize import word_tokenize as en_tokenize
 from nltk.corpus import stopwords
@@ -6,7 +7,7 @@ from nltk.corpus import stopwords
 
 class TextCleaner:
     """Text cleaning and preprocessing class"""
-    
+
     def __init__(self, language: str, config):
         self.language = language
         self.config = config
@@ -20,11 +21,18 @@ class TextCleaner:
         # Remove HTML
         text = re.sub(r"<[^>]+>", "", text)
 
-        # Remove special chars and digits 
-        text = re.sub(r'[^a-zA-Z0-9\s]', '', text)
+        # Normalize text to NFC form to standardize characters
+        text = unicodedata.normalize("NFC", text)
+
+        # Remove characters that are not letters or whitespace
+        text = re.sub(r"[^\w\s]", " ", text, flags=re.UNICODE)
+
+        # Remove digits and underscores
+        text = re.sub(r"[\d_]+", " ", text)
+
         text = text.lower()
 
-        # Tokenize based on language
+        # Tokenize based on languages
         if self.language == "vi":
             tokens = word_tokenize(text)
         else:

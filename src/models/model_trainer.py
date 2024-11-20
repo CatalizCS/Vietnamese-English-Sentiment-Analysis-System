@@ -90,8 +90,8 @@ class EnhancedModelTrainer:
             C=self.param_grid["svm__C"][0],
             max_iter=1000,
             class_weight="balanced",
-            kernel=self.regularization_config["svm_reg"]["kernel"],
-            shrinking=self.regularization_config["svm_reg"]["shrinking"],
+            # kernel=self.regularization_config["svm_reg"]["kernel"],
+            # shrinking=self.regularization_config["svm_reg"]["shrinking"],
             dual=False,
         )
 

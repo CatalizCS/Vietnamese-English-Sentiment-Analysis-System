@@ -14,6 +14,8 @@ from rich.prompt import Prompt
 import requests
 import socket
 import time
+import logging
+from logging.handlers import RotatingFileHandler
 
 # Add project root to path
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -87,7 +89,8 @@ def train(language: str, config: Config):
             model_trainer.feature_extractor = feature_extractor
 
         # Load and validate data with error checks
-        df = data_loader.load_data(language)
+        file_path = os.path.join(config.DATA_DIR, 'raw', f'{language}_social_media.csv')
+        df = data_loader.load_data(file_path)
         if df is None or df.empty:
             raise ValueError("No data loaded")
 
@@ -108,8 +111,8 @@ def train(language: str, config: Config):
         start_time = datetime.now()
 
         # Train model with error handling
-        model = model_trainer.train_with_grid_search(X_train, y_train)
-        if model is None or not isinstance(model, dict):
+        models = model_trainer.train_with_grid_search(X_train, y_train)
+        if not models:
             raise ValueError("Model training failed - no valid models returned")
 
         # Calculate training time
@@ -117,9 +120,9 @@ def train(language: str, config: Config):
 
         # Get metrics for best performing model
         best_model_name = max(
-            model.items(), key=lambda x: getattr(x[1], "best_score_", 0)
+            models.items(), key=lambda x: getattr(x[1], "best_score_", 0)
         )[0]
-        best_model = model[best_model_name]
+        best_model = models[best_model_name]
 
         # Evaluate on test set
         X_test, y_test = data_loader.get_features_and_labels(test_df)
@@ -140,13 +143,13 @@ def train(language: str, config: Config):
             )
 
         # Save final model with metrics
-        model_trainer.save_final_model(model, final_metrics)
+        model_trainer.save_final_model(models, final_metrics)
 
         logger.info("Training completed successfully")
         logger.info(f"Total training time: {training_time:.2f} seconds")
         logger.info(f"Best model: {best_model_name} with test score: {test_score:.4f}")
 
-        return model
+        return models
 
     except Exception as e:
         logger.error(f"Training failed: {str(e)}")
@@ -1298,6 +1301,24 @@ def get_server_logs(port, lines=1000):
         return []
 
 
+def setup_logging():
+    log_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    log_file = 'sentiment_analysis.log'
+
+    file_handler = RotatingFileHandler(log_file, maxBytes=10*1024*1024, backupCount=5)
+    file_handler.setFormatter(log_formatter)
+    file_handler.setLevel(logging.INFO)
+
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+    console_handler.setLevel(logging.INFO)
+
+    logger = logging.getLogger()
+    logger.setLevel(logging.INFO)
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+
 def main():
     # Initialize config first
     config = Config()
@@ -1387,4 +1408,5 @@ def main():
 
 
 if __name__ == "__main__":
+    setup_logging()
     main()
