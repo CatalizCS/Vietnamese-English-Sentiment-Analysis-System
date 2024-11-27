@@ -77,25 +77,30 @@ class EnhancedModelTrainer:
         """Create model ensemble with documented algorithms"""
 
         rf = RandomForestClassifier(
-            n_estimators=self.param_grid["rf__n_estimators"][0],
-            max_depth=self.param_grid["rf__max_depth"][0],
+            n_estimators=1000,  # Increased from 300
+            max_depth=50,  # Increased from 30
             min_samples_split=self.model_config["preprocessing"]["min_df"],
             class_weight=self.model_config["class_weight_method"],
             ccp_alpha=self.regularization_config["rf_reg"]["ccp_alpha"],
-            max_samples=self.regularization_config["rf_reg"]["max_samples"],
+            max_samples=0.7,  # Reduced from 0.8 for more randomization
             random_state=42,
+            bootstrap=True,
+            oob_score=True,  # Enable out-of-bag score estimation
+            n_jobs=-1  # Use all CPU cores
         )
 
         svm = SVMWithProba(
-            C=self.param_grid["svm__C"][0],
-            max_iter=1000,
+            C=0.5,  # Reduced from 1.0 for better regularization
+            max_iter=2000,  # Increased from 1000
             class_weight="balanced",
-            # kernel=self.regularization_config["svm_reg"]["kernel"],
-            # shrinking=self.regularization_config["svm_reg"]["shrinking"],
             dual=False,
+            tol=1e-4
         )
 
-        nb = MultinomialNB(alpha=self.param_grid["nb__alpha"][0], fit_prior=True)
+        nb = MultinomialNB(
+            alpha=0.8,  # Adjusted from default
+            fit_prior=True
+        )
 
         models = [
             ("rf", Pipeline([("scaler", MinMaxScaler()), ("rf", rf)])),
@@ -384,19 +389,25 @@ class EnhancedModelTrainer:
                     self.logger.info(f"\nTraining {name} model...")
 
                     # Get training scores for each fold
-                    num_epochs = 5  # Number of CV folds
+                    num_epochs = 10  # Increased from 5
                     train_scores = []
                     valid_scores = []
 
-                    # Create cross-validation splits
+                    # Create cross-validation splits with stratification
                     cv = StratifiedKFold(
-                        n_splits=num_epochs, shuffle=True, random_state=42
+                        n_splits=num_epochs, 
+                        shuffle=True, 
+                        random_state=42
                     )
 
-                    # Manual cross-validation loop
-                    for fold, (train_idx, val_idx) in enumerate(
-                        cv.split(X_train_features, y_train)
-                    ):
+                    # Add early stopping
+                    patience = self.config.VALIDATION_CONFIG["early_stopping"]["patience"]
+                    min_delta = self.config.VALIDATION_CONFIG["early_stopping"]["min_delta"]
+                    best_score = float('-inf')
+                    patience_count = 0
+
+                    # Manual cross-validation loop with early stopping
+                    for fold, (train_idx, val_idx) in enumerate(cv.split(X_train_features, y_train)):
                         # Split data - using numpy indexing
                         X_train_fold = X_train_features[train_idx]
                         X_val_fold = X_train_features[val_idx]
@@ -423,6 +434,17 @@ class EnhancedModelTrainer:
                             f"Fold {fold+1}/{num_epochs} - "
                             f"Train: {train_score:.4f}, Val: {val_score:.4f}"
                         )
+
+                        # Add early stopping check
+                        if val_score > best_score + min_delta:
+                            best_score = val_score
+                            patience_count = 0
+                        else:
+                            patience_count += 1
+
+                        if patience_count >= patience:
+                            self.logger.info(f"Early stopping triggered at fold {fold+1}")
+                            break
 
                     # Store training history
                     training_history[name] = {

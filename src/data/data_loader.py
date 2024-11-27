@@ -1,7 +1,6 @@
 import os
 import pandas as pd
 from typing import Tuple
-from sklearn.model_selection import train_test_split
 from src.utils.logger import Logger  # Updated import
 
 class DataLoader:

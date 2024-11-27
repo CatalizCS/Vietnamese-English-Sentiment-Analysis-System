@@ -165,62 +165,70 @@ class Config:
 
     # Enhanced model training configuration
     MODEL_TRAINING_CONFIG = {
-        "cv_folds": 5,
+        "cv_folds": 10,  # Increased from 5
         "class_weight_method": "balanced",
         "feature_selection_method": "mutual_info_classif",
         "sampling_strategy": "smote",
         "preprocessing": {
-            "min_df": 5,  # loại bỏ rare terms
-            "max_df": 0.9,  # loại bỏ quá phổ biến terms
-            "ngram_range": (1, 3),  # để giảm độ phức tạp
-            "analyzer": ["word", "char_wb"],  # Bỏ char analyzer để giảm noise
+            "min_df": 10,  # Increased from 5
+            "max_df": 0.85,  # Reduced from 0.9
+            "ngram_range": (1, 2),  # Reduced from (1,3) to prevent overfitting
+            "analyzer": ["word", "char_wb"],
             "strip_accents": "unicode",
-            "binary": True,  # Đổi thành True để giảm ảnh hưởng của từ xuất hiện nhiều lần
+            "binary": True,
             "sublinear_tf": True,
         },
     }
 
-    # Optimized parameter grid - Điều chỉnh hyperparameters
+    # Optimized parameter grid with better regularization
     PARAM_GRID = {
-        # Random Forest - Giảm độ phức tạp
-        "rf__n_estimators": [100, 300, 500],  # Giảm số lượng cây
-        "rf__max_depth": [10, 20, 30],  # Giới hạn độ sâu cây
-        "rf__min_samples_split": [5, 10],  # Tăng số mẫu tối thiểu để split
-        "rf__min_samples_leaf": [2, 4],  # Tăng số mẫu tối thiểu trên lá
-        "rf__max_features": ["sqrt"],  # Chỉ dùng sqrt để giảm độ phức tạp
+        # Random Forest - Improved parameters
+        "rf__n_estimators": [500, 800, 1000],  # Increased values
+        "rf__max_depth": [30, 50, 70],  # Adjusted range
+        "rf__min_samples_split": [10, 15],  # Increased to reduce overfitting
+        "rf__min_samples_leaf": [4, 8],  # Increased for better generalization
+        "rf__max_features": ["sqrt", "log2"],  # Added log2 option
         "rf__bootstrap": [True],
-        "rf__criterion": ["gini"],
-        "rf__oob_score": [True],  # Thêm oob_score để đánh giá overfitting
-        # SVM - Tăng regularization
-        "svm__C": [0.01, 0.1, 1.0],  # Giảm C để tăng regularization
-        "svm__tol": [1e-3],  # Tăng tolerance
-        "svm__max_iter": [1000],  # Giảm số vòng lặp
+        "rf__criterion": ["gini", "entropy"],  # Added entropy
+        "rf__oob_score": [True],
+
+        # SVM - Enhanced regularization
+        "svm__C": [0.01, 0.1, 0.5],  # Adjusted for stronger regularization
+        "svm__tol": [1e-4, 1e-3],
+        "svm__max_iter": [2000],  # Increased iterations
         "svm__class_weight": ["balanced"],
         "svm__dual": [False],
-        # Naive Bayes - Điều chỉnh smoothing
-        "nb__alpha": [0.5, 1.0, 2.0],  # Tăng alpha để smooth hơn
-        "nb__fit_prior": [True],
-        # Feature Selection - Giảm số features
-        "feature_selection__k": [500, 1000],  # Giảm số features được chọn
-        "feature_selection__score_func": [
-            "mutual_info_classif"
-        ],  # Chỉ dùng mutual_info
+
+        # Naive Bayes - Adjusted smoothing
+        "nb__alpha": [0.8, 1.2, 1.5],  # Adjusted range
+        "nb__fit_prior": [True, False],  # Test both options
+
+        # Feature Selection - Optimized
+        "feature_selection__k": [800, 1200],  # Adjusted feature count
+        "feature_selection__score_func": ["mutual_info_classif"],
     }
 
     VALIDATION_CONFIG = {
-        "early_stopping": {"patience": 3, "min_delta": 0.001, "monitor": "val_score"},
-        "validation_split": 0.2,
+        "early_stopping": {
+            "patience": 5,  # Increased from 3
+            "min_delta": 0.0005,  # Reduced from 0.001 for finer control
+            "monitor": "val_score"
+        },
+        "validation_split": 0.15,  # Reduced from 0.2
         "shuffle": True,
         "random_state": 42,
     }
 
-    # Add regularization configuration
+    # Enhanced regularization configuration
     REGULARIZATION_CONFIG = {
         "rf_reg": {
-            "ccp_alpha": 0.01,  # Thêm cost complexity pruning
-            "max_samples": 0.8,  # Sử dụng 80% samples mỗi cây
+            "ccp_alpha": 0.005,  # Reduced from 0.01 for finer pruning
+            "max_samples": 0.7,  # Reduced from 0.8
         },
-        "svm_reg": {"kernel": "linear", "shrinking": True},  # Sử dụng kernel đơn giản
+        "svm_reg": {
+            "kernel": "linear",
+            "shrinking": True
+        },
     }
 
     # Add scoring configuration
