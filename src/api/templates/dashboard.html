@@ -121,187 +121,172 @@
     </div>
 
     <script>
+      const WS_CONFIG = {
+        MAX_RETRIES: 5,
+        RETRY_DELAY: 3000,
+        HEARTBEAT_INTERVAL: 30000,
+        RECONNECT_DELAY: 1000,
+        CONNECTION_TIMEOUT: 5000,
+      };
+
       let ws;
       let reconnectAttempts = 0;
-      const reconnectDelay = 3000;
       let heartbeatInterval;
-      let heartbeatTimeout;
+      let connectionTimeout;
+      let isReconnecting = false;
+
+      function initializeWebSocket() {
+        const wsProtocol =
+          window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/metrics`;
+
+        try {
+          ws = new WebSocket(wsUrl);
+          setupWebSocketHandlers();
+          startConnectionTimeout();
+        } catch (error) {
+          console.error("WebSocket initialization error:", error);
+          handleReconnect("Failed to create WebSocket");
+        }
+      }
+
+      function setupWebSocketHandlers() {
+        ws.onopen = () => {
+          console.log("WebSocket connected");
+          document.getElementById("system-status").innerHTML =
+            '<span class="text-green-500">●</span> Connected';
+
+          reconnectAttempts = 0;
+          isReconnecting = false;
+          startHeartbeat();
+          clearConnectionTimeout();
+        };
+
+        ws.onclose = (event) => {
+          console.log("WebSocket closed:", event);
+          clearHeartbeat();
+          if (!isReconnecting) {
+            handleReconnect("Connection closed");
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error("WebSocket error:", error);
+          if (!isReconnecting) {
+            handleReconnect("Connection error");
+          }
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === "heartbeat") {
+              handleHeartbeat();
+            } else if (data.type === "metrics") {
+              console.log("Received metrics:", data);
+              updateCharts(data);
+              updateMetrics(data);
+            }
+          } catch (error) {
+            console.error("Message processing error:", error);
+          }
+        };
+      }
+
+      function startConnectionTimeout() {
+        clearConnectionTimeout();
+        connectionTimeout = setTimeout(() => {
+          if (ws.readyState === 0) {
+            // Still connecting
+            ws.close();
+            handleReconnect("Connection timeout");
+          }
+        }, WS_CONFIG.CONNECTION_TIMEOUT);
+      }
+
+      function clearConnectionTimeout() {
+        if (connectionTimeout) {
+          clearTimeout(connectionTimeout);
+          connectionTimeout = null;
+        }
+      }
 
       function handleReconnect(reason) {
+        if (isReconnecting) return;
+
+        console.log(`Initiating reconnect: ${reason}`);
+        isReconnecting = true;
+        clearHeartbeat();
+
         document.getElementById("system-status").innerHTML =
-          '<span class="text-yellow-500">●</span> Disconnected';
+          '<span class="text-yellow-500">●</span> Reconnecting...';
 
-        reconnectAttempts++;
-        console.log(`Reconnecting... Attempt ${reconnectAttempts} (${reason})`);
-        setTimeout(connectWebSocket, reconnectDelay);
-      }
+        if (reconnectAttempts < WS_CONFIG.MAX_RETRIES) {
+          reconnectAttempts++;
+          const delay = reconnectAttempts * WS_CONFIG.RETRY_DELAY;
+          console.log(`Reconnect attempt ${reconnectAttempts} in ${delay}ms`);
 
-      function sendHeartbeat() {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: "heartbeat" }));
-          console.log("Heartbeat sent");
-
-          // Set a timeout to wait for heartbeat acknowledgment
-          heartbeatTimeout = setTimeout(() => {
-            console.warn("Heartbeat acknowledgment not received.");
-            ws.close();
-          }, 5000); // 5 seconds timeout
-        }
-      }
-
-      function handleHeartbeatAck() {
-        if (heartbeatTimeout) {
-          clearTimeout(heartbeatTimeout);
-          console.log("Heartbeat acknowledgment received.");
-        }
-      }
-
-      async function connectWebSocket() {
-        try {
-          const wsProtocol =
-            window.location.protocol === "https:" ? "wss:" : "ws:";
-          const host = window.location.host || "localhost:7270";
-          const wsUrl = `${wsProtocol}//${host}/ws/metrics`;
-
-          console.log("Connecting to WebSocket:", wsUrl);
-
-          if (ws) {
-            ws.close();
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-          }
-
-          ws = new WebSocket(wsUrl);
-
-          ws.onopen = () => {
-            console.log("WebSocket connected");
-            document.getElementById("system-status").innerHTML =
-              '<span class="text-green-500">●</span> Connected';
-            reconnectAttempts = 0;
-            // Start sending heartbeat every 30 seconds
-            heartbeatInterval = setInterval(sendHeartbeat, 30000);
-            // Send the first heartbeat immediately
-            sendHeartbeat();
-          };
-
-          ws.onclose = (event) => {
-            console.log("WebSocket connection closed:", event);
-            document.getElementById("system-status").innerHTML =
-              '<span class="text-yellow-500">●</span> Disconnected';
-            clearInterval(heartbeatInterval); // Stop heartbeat on close
-            clearTimeout(heartbeatTimeout);
-            handleReconnect("Connection closed");
-          };
-
-          ws.onerror = (error) => {
-            console.error("WebSocket error:", error);
-            ws.close();
-          };
-
-          ws.onmessage = (event) => {
-            if (ws.readyState === WebSocket.OPEN) {
-              try {
-                const data = JSON.parse(event.data);
-
-                if (data.type === "heartbeat_ack") {
-                  handleHeartbeatAck();
-                } else if (data.type === "metrics") {
-                  const metrics = data;
-                  updateCharts(metrics);
-                  updateMetrics(metrics);
-                }
-              } catch (err) {
-                console.error("Error processing metrics:", err);
-              }
+          setTimeout(() => {
+            if (ws) {
+              ws.close();
             }
-          };
-        } catch (err) {
-          console.error("WebSocket connection failed:", err);
-          handleReconnect("Connection failed");
+            initializeWebSocket();
+          }, delay);
+        } else {
+          document.getElementById("system-status").innerHTML =
+            '<span class="text-red-500">●</span> Connection failed';
+          console.log("Max reconnection attempts reached");
         }
       }
 
-      // Function to initialize WebSocket connection
-      connectWebSocket();
-
-      // Functions to update charts (implement as needed)
-      function updateCharts(metrics) {
-        const now = new Date();
-
-        // Update data arrays
-        for (const chart of Object.values(charts)) {
-          chart.data[0].x.push(now);
-          if (chart.data[0].x.length > MAX_POINTS) {
-            chart.data[0].x.shift();
-            chart.data[0].y.shift();
+      function startHeartbeat() {
+        clearHeartbeat();
+        heartbeatInterval = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: "heartbeat" }));
           }
+        }, WS_CONFIG.HEARTBEAT_INTERVAL);
+      }
+
+      function clearHeartbeat() {
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+          heartbeatInterval = null;
         }
-
-        // Add new values
-        charts.cpu.data[0].y.push(metrics.cpu_usage);
-        charts.memory.data[0].y.push(metrics.memory_usage.percent);
-        charts.requests.data[0].y.push(metrics.requests_per_sec);
-        charts.response.data[0].y.push(metrics.avg_response_time);
-
-        // Update charts
-        Plotly.update("cpu-chart", charts.cpu.data, {
-          xaxis: { range: [now - 300000, now] }, // Show last 5 minutes
-        });
-        Plotly.update("memory-chart", charts.memory.data, {
-          xaxis: { range: [now - 300000, now] },
-        });
-        Plotly.update("request-rate-chart", charts.requests.data, {
-          xaxis: { range: [now - 300000, now] },
-        });
-        Plotly.update("response-time-chart", charts.response.data, {
-          xaxis: { range: [now - 300000, now] },
-        });
-
-        // Update numeric displays
-        document.getElementById("cpu-usage").textContent =
-          metrics.cpu_usage.toFixed(1);
-        document.getElementById("memory-usage").textContent =
-          metrics.memory_usage.percent.toFixed(1);
       }
 
-      function updateMetrics(metrics) {
-        // Update basic metrics
-        document.getElementById("cpu-usage").textContent =
-          metrics.cpu_usage.toFixed(1);
-        document.getElementById("memory-usage").textContent =
-          metrics.memory_usage.percent.toFixed(1);
-
-        // Update model status
-        updateModelStatus("vi", metrics.model_status.vi);
-        updateModelStatus("en", metrics.model_status.en);
+      function handleHeartbeat() {
+        // Reset reconnect attempts on successful heartbeat
+        reconnectAttempts = 0;
       }
 
-      function updateModelStatus(lang, status) {
-        const element = document.getElementById(`${lang}-model-status`);
-        const statusDiv = element.querySelector(".metric-value");
-        statusDiv.innerHTML = status
-          ? '<span class="text-green-500">●</span> Active'
-          : '<span class="text-red-500">●</span> Inactive';
-      }
+      // Initialize WebSocket connection
+      window.addEventListener("load", () => {
+        initializeWebSocket();
+      });
 
-      window.addEventListener("load", connectWebSocket);
+      // Cleanup on page unload
+      window.addEventListener("beforeunload", () => {
+        clearHeartbeat();
+        if (ws) {
+          ws.close();
+        }
+      });
 
-      document.getElementById("system-status").parentElement.innerHTML += `
-        <button onclick="handleManualReconnect()" 
-                id="reconnectBtn"
-                class="mt-2 px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600">
-          Reconnect
-        </button>`;
-
+      // Add manual reconnect button handler
       function handleManualReconnect() {
         const btn = document.getElementById("reconnectBtn");
         btn.disabled = true;
         btn.classList.add("opacity-50");
+
         reconnectAttempts = 0;
-        connectWebSocket();
+        isReconnecting = false;
+        initializeWebSocket();
+
         setTimeout(() => {
           btn.disabled = false;
           btn.classList.remove("opacity-50");
-        }, 3000);
+        }, WS_CONFIG.RECONNECT_DELAY);
       }
 
       // Initialize time window for charts (5 minutes of data)
@@ -399,6 +384,8 @@
             chart.data[0].y.shift();
           }
         }
+
+        console.log(metrics);
 
         // Add new values
         charts.cpu.data[0].y.push(metrics.cpu_usage);

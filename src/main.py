@@ -1319,6 +1319,73 @@ def setup_logging():
     logger.addHandler(console_handler)
 
 
+def continue_training(language: str, config: Config):
+    """Continue training from checkpoint"""
+    logger = Logger(__name__).logger
+    menu = TerminalMenu(config)
+    
+    try:
+        # Initialize trainer
+        trainer = EnhancedModelTrainer(language, config)
+        
+        # List available checkpoints
+        checkpoints = trainer.list_checkpoints()
+        if not checkpoints:
+            menu.display_result(False, "No checkpoints available")
+            return
+            
+        # Display checkpoints
+        print("\nAvailable checkpoints:")
+        for i, cp in enumerate(checkpoints):
+            print(f"{i+1}. {cp['filename']}")
+            print(f"   Timestamp: {cp['timestamp']}")
+            print(f"   Epoch: {cp['epoch']}")
+            print(f"   Score: {cp['metrics']:.4f if cp['metrics'] else 'N/A'}")
+            
+        # Get user choice
+        choice = menu.console.input("\nEnter checkpoint number (or press Enter for latest): ")
+        checkpoint_name = None
+        if choice.strip():
+            idx = int(choice) - 1
+            if 0 <= idx < len(checkpoints):
+                checkpoint_name = checkpoints[idx]["filename"]
+            else:
+                menu.display_result(False, "Invalid checkpoint number")
+                return
+                
+        # Get training parameters
+        num_epochs = int(menu.console.input("Enter number of epochs to train: "))
+        
+        # Load training data
+        data_loader = DataLoader(config)
+        input_file = menu.get_file_path("training data")
+        df = pd.read_csv(input_file)
+        
+        # Preprocess data
+        preprocessor = DataPreprocessor(language, config)
+        processed_df = preprocessor.preprocess(df)
+        if processed_df.empty:
+            raise ValueError("No valid samples after preprocessing")
+            
+        # Get features and labels
+        X_train = processed_df["cleaned_text"]
+        y_train = processed_df["label"]
+        
+        # Continue training
+        menu.display_progress("Continuing model training...")
+        model, metrics = trainer.continue_training(X_train, y_train, checkpoint_name, num_epochs)
+        
+        if model:
+            menu.display_result(True, "Training continued successfully")
+            # Display updated metrics
+            display_metrics(language, config)
+        else:
+            menu.display_result(False, "Training failed")
+            
+    except Exception as e:
+        logger.error(f"Continue training error: {str(e)}")
+        menu.display_result(False, f"Error: {str(e)}")
+
 def main():
     # Initialize config first
     config = Config()
@@ -1400,6 +1467,8 @@ def main():
 
             elif choice == "12":  # API Server
                 handle_api_server(menu, language, config)
+            elif choice == "13":  # Add new menu option
+                continue_training(language, config)
 
         except Exception as e:
             menu.display_result(False, f"Error: {str(e)}")

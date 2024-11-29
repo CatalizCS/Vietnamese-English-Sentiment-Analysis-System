@@ -293,7 +293,7 @@ async def predict(request: Request):
                 "emotion": result["emotion"],
                 "emotion_vi": result["emotion_vi"],
                 "emotion_emoji": result["emotion_emoji"],
-            }
+            },
         )
 
     except Exception as e:

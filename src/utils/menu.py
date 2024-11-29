@@ -12,6 +12,7 @@ class TerminalMenu:
     def __init__(self, config=None):
         """Initialize TerminalMenu with configuration"""
         from rich.console import Console
+
         self.console = Console()
         self.config = config  # Store config object
         self.default_data_dir = os.path.join(
@@ -34,6 +35,7 @@ class TerminalMenu:
             "10": "Model optimization",
             "11": "Export results",
             "12": "API Server",
+            "13": "Continue Training Model",
             "q": "Quit",
         }
 
@@ -82,6 +84,7 @@ class TerminalMenu:
         table.add_row("10", "Model Optimization", "Tune model parameters")
         table.add_row("11", "Export Results", "Export analysis results and reports")
         table.add_row("12", "API Server", "Start/Stop REST API Server")
+        table.add_row("13", "Continue Training Model", "Continue training the model")
         table.add_row("q", "Quit", "Exit the application")
 
         self.console.print(table)
@@ -203,34 +206,38 @@ class TerminalMenu:
         try:
             self.console.print("\n[bold cyan]Analysis Results:[/bold cyan]")
             self.console.print(f"Text: {text}")
-            
+
             if emotion_result:
                 # Get sentiment label
-                sentiment = emotion_result.get('sentiment')
-                sentiment_conf = emotion_result.get('sentiment_confidence', 0)
-                
-                sentiment_label = "Tích cực" if sentiment == 2 else "Tiêu cực" if sentiment == 0 else "Trung tính"
+                sentiment = emotion_result.get("sentiment")
+                sentiment_conf = emotion_result.get("sentiment_confidence", 0)
+
+                sentiment_label = (
+                    "Tích cực"
+                    if sentiment == 2
+                    else "Tiêu cực" if sentiment == 0 else "Trung tính"
+                )
                 self.console.print(f"\nCảm xúc chung: {sentiment_label}")
                 self.console.print(f"Độ tin cậy: {sentiment_conf:.2f}")
-                
+
                 # Display detailed emotion
-                emotion = emotion_result.get('emotion', '')
-                emotion_vi = emotion_result.get('emotion_vi', '')
-                emoji = emotion_result.get('emotion_emoji', '')
-                emotion_conf = emotion_result.get('emotion_confidence', 0)
-                
+                emotion = emotion_result.get("emotion", "")
+                emotion_vi = emotion_result.get("emotion_vi", "")
+                emoji = emotion_result.get("emotion_emoji", "")
+                emotion_conf = emotion_result.get("emotion_confidence", 0)
+
                 self.console.print(f"\nBiểu cảm chi tiết: {emotion_vi} {emoji}")
                 self.console.print(f"Độ tin cậy: {emotion_conf:.2f}")
-                
+
                 # Display emotion scores if available
-                if emotion_result.get('emotion_scores'):
+                if emotion_result.get("emotion_scores"):
                     self.console.print("\nĐiểm số các biểu cảm:")
-                    for emotion, score in emotion_result['emotion_scores'].items():
+                    for emotion, score in emotion_result["emotion_scores"].items():
                         if score > 0:
                             self.console.print(f"{emotion}: {score:.2f}")
             else:
                 self.console.print("[red]Không thể phân tích cảm xúc[/red]")
-                
+
         except Exception as e:
             self.console.print(f"[red]Error displaying results: {str(e)}[/red]")
 
@@ -324,7 +331,7 @@ class TerminalMenu:
         table.add_row("2", "Stop API Server")
         table.add_row("3", "View API Status")
         table.add_row("4", "Configure API Settings")
-        table.add_row("5", "Test API Endpoints") 
+        table.add_row("5", "Test API Endpoints")
         table.add_row("6", "View Server Logs")
         table.add_row("7", "Monitor Metrics")
         table.add_row("8", "Dashboard")
@@ -455,12 +462,12 @@ class TerminalMenu:
         table.add_row("Total Errors", str(metrics["total_errors"]))
         table.add_row("Memory Usage", f"{metrics['current_memory_usage']}%")
         table.add_row("CPU Usage", f"{metrics['current_cpu_usage']}%")
-        
+
         # Model status
         for lang, status in metrics["active_models"].items():
             table.add_row(
                 f"{lang.upper()} Model",
-                "[green]Active[/green]" if status else "[red]Inactive[/red]"
+                "[green]Active[/green]" if status else "[red]Inactive[/red]",
             )
 
         self.console.print("\n[bold]API Metrics Summary[/bold]")
@@ -484,29 +491,25 @@ class TerminalMenu:
         return Prompt.ask(
             "\n[yellow]Select option[/yellow]",
             choices=["1", "2", "3", "4", "5", "6", "b"],
-            default="b"
+            default="b",
         )
 
     def get_log_lines(self):
         """Get number of log lines to display"""
-        return IntPrompt.ask(
-            "\n[yellow]Enter number of lines[/yellow]",
-            default=50
-        )
+        return IntPrompt.ask("\n[yellow]Enter number of lines[/yellow]", default=50)
 
     def get_log_level(self):
         """Get log level to filter"""
         return Prompt.ask(
             "\n[yellow]Enter log level[/yellow]",
             choices=["DEBUG", "INFO", "WARNING", "ERROR", "all"],
-            default="all"
+            default="all",
         )
 
     def get_log_time(self):
         """Get time filter for logs"""
         hours = IntPrompt.ask(
-            "\n[yellow]Show logs from last N hours[/yellow]",
-            default=24
+            "\n[yellow]Show logs from last N hours[/yellow]", default=24
         )
         time_ago = datetime.now() - timedelta(hours=hours)
         return time_ago.isoformat()
@@ -517,7 +520,7 @@ class TerminalMenu:
             show_header=True,
             header_style="bold magenta",
             wrap=True,
-            width=self.console.width
+            width=self.console.width,
         )
         table.add_column("Time", style="cyan")
         table.add_column("Level", style="yellow")
@@ -555,31 +558,29 @@ class TerminalMenu:
         return Prompt.ask(
             "\n[yellow]Select option[/yellow]",
             choices=["1", "2", "3", "4", "5", "6", "7", "8", "9", "b"],
-            default="b"
+            default="b",
         )
 
     def get_log_filters(self):
         """Get log filter parameters"""
         filters = {}
-        
+
         # Get log type
         filters["type"] = Prompt.ask(
-            "Log type",
-            choices=["all", "init", "request"],
-            default="all"
+            "Log type", choices=["all", "init", "request"], default="all"
         )
-        
+
         # Get path filter if requested
         if Prompt.ask("Filter by path?", choices=["y", "n"], default="n") == "y":
             filters["path"] = self.console.input("Enter path (e.g., /predict): ")
-        
+
         # Get status code if requested
         if Prompt.ask("Filter by status code?", choices=["y", "n"], default="n") == "y":
             filters["status_code"] = IntPrompt.ask("Enter status code (e.g., 200): ")
-        
+
         # Get number of lines
         filters["lines"] = IntPrompt.ask("Number of lines to show", default=50)
-        
+
         return filters
 
     def format_log_entry(self, log: str) -> str:
@@ -596,7 +597,7 @@ class TerminalMenu:
                 "INFO": "green",
                 "WARNING": "yellow",
                 "ERROR": "red",
-                "DEBUG": "blue"
+                "DEBUG": "blue",
             }
             color = level_colors.get(level.strip("[]"), "white")
 
@@ -625,48 +626,52 @@ class TerminalMenu:
     def get_log_search_params(self):
         """Get log search parameters"""
         params = {}
-        params["keyword"] = self.console.input("[yellow]Enter search keyword: [/yellow]")
-        
+        params["keyword"] = self.console.input(
+            "[yellow]Enter search keyword: [/yellow]"
+        )
+
         if Prompt.ask("Add date filter?", choices=["y", "n"], default="n") == "y":
-            params["from_date"] = self.console.input("[yellow]From date (YYYY-MM-DD): [/yellow]")
-            params["to_date"] = self.console.input("[yellow]To date (YYYY-MM-DD): [/yellow]")
-            
+            params["from_date"] = self.console.input(
+                "[yellow]From date (YYYY-MM-DD): [/yellow]"
+            )
+            params["to_date"] = self.console.input(
+                "[yellow]To date (YYYY-MM-DD): [/yellow]"
+            )
+
         if Prompt.ask("Add more filters?", choices=["y", "n"], default="n") == "y":
             params["level"] = Prompt.ask(
-                "Log level", 
+                "Log level",
                 choices=["ERROR", "WARNING", "INFO", "DEBUG", "all"],
-                default="all"
+                default="all",
             )
-            params["path"] = self.console.input("[yellow]Filter by path (optional): [/yellow]")
-            
+            params["path"] = self.console.input(
+                "[yellow]Filter by path (optional): [/yellow]"
+            )
+
         return params
 
     def get_metrics_filter(self):
         """Get metrics filter parameters"""
         filters = {}
-        
+
         # Time range
         filters["time_range"] = Prompt.ask(
-            "Time range",
-            choices=["1h", "6h", "24h", "7d", "30d"],
-            default="24h"
+            "Time range", choices=["1h", "6h", "24h", "7d", "30d"], default="24h"
         )
-        
+
         # Metrics type
         filters["type"] = Prompt.ask(
             "Metrics type",
             choices=["performance", "errors", "models", "all"],
-            default="all"
+            default="all",
         )
-        
+
         # Aggregation
         if Prompt.ask("Add aggregation?", choices=["y", "n"], default="n") == "y":
             filters["aggregation"] = Prompt.ask(
-                "Aggregation period",
-                choices=["1min", "5min", "1h", "1d"],
-                default="1h"
+                "Aggregation period", choices=["1min", "5min", "1h", "1d"], default="1h"
             )
-            
+
         return filters
 
     def display_metrics_summary(self, metrics: dict):
@@ -674,7 +679,7 @@ class TerminalMenu:
         if not metrics:
             self.console.print("[yellow]No metrics data available[/yellow]")
             return
-            
+
         table = Table(show_header=True, header_style="bold cyan")
         table.add_column("Metric")
         table.add_column("Value")
@@ -684,7 +689,7 @@ class TerminalMenu:
                 formatted_value = f"{value:.2f}"
             else:
                 formatted_value = str(value)
-                
+
             # Add color formatting based on thresholds
             if "error" in key.lower():
                 color = "red" if value > 0 else "green"
@@ -696,45 +701,38 @@ class TerminalMenu:
                     formatted_value = f"[yellow]{formatted_value}%[/yellow]"
                 else:
                     formatted_value = f"[green]{formatted_value}%[/green]"
-                    
+
             table.add_row(key, formatted_value)
-            
+
         self.console.print(table)
+
 
 def get_more_test_samples():
     """Get additional test samples"""
     return [
         ("Sản phẩm rất chất lượng, đóng gói cẩn thận", 2),
-        ("Giao hàng chậm, thái độ phục vụ kém", 0), 
+        ("Giao hàng chậm, thái độ phục vụ kém", 0),
         ("Hàng tạm được, giá hơi cao", 1),
         ("Tuyệt vời, sẽ ủng hộ shop dài dài", 2),
         ("Thất vọng về chất lượng sản phẩm", 0),
-        ("Hàng đúng như mô tả", 1)
+        ("Hàng đúng như mô tả", 1),
     ]
+
 
 def get_dashboard_config():
     """Get dashboard configuration options"""
     config = {}
-    config['update_interval'] = IntPrompt.ask(
-        "Update interval (seconds)",
-        default=5
-    )
-    config['chart_history'] = IntPrompt.ask(
-        "Number of data points to show",
-        default=50
-    )
-    config['alert_threshold'] = IntPrompt.ask(
-        "Error rate alert threshold (%)",
-        default=10
+    config["update_interval"] = IntPrompt.ask("Update interval (seconds)", default=5)
+    config["chart_history"] = IntPrompt.ask("Number of data points to show", default=50)
+    config["alert_threshold"] = IntPrompt.ask(
+        "Error rate alert threshold (%)", default=10
     )
     return config
 
+
 def get_log_export_format():
     """Get log export format"""
-    return Prompt.ask(
-        "Export format",
-        choices=["txt", "json", "csv"],
-        default="txt"
-    )
+    return Prompt.ask("Export format", choices=["txt", "json", "csv"], default="txt")
+
 
 # ...existing code...

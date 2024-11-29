@@ -677,3 +677,95 @@ class EnhancedModelTrainer:
         except Exception as e:
             self.logger.error(f"Hyperparameter optimization failed: {str(e)}")
             return None
+
+    def continue_training(self, X_train, y_train, checkpoint_name=None, num_epochs=5):
+        """Continue training from a checkpoint"""
+        self.logger.info("Continuing training from checkpoint...")
+        try:
+            # Restore model state from checkpoint
+            model, metrics = self.restore_from_checkpoint(checkpoint_name)
+            if model is None:
+                raise ValueError("Could not restore model from checkpoint")
+
+            # Get last epoch
+            start_epoch = metrics.get("epoch", 0) if metrics else 0
+            
+            # Extract features if not already done
+            if self.feature_extractor is None:
+                from src.features.feature_engineering import FeatureExtractor
+                self.feature_extractor = FeatureExtractor(self.language, self.config)
+            
+            X_train_features = self.feature_extractor.extract_features(X_train)
+
+            # Continue training for each model in ensemble
+            for name, pipeline in model.items():
+                self.logger.info(f"\nContinuing training for {name}...")
+                
+                # Setup validation
+                cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+                train_scores = metrics.get("models", {}).get(name, {}).get("train_scores", [])
+                valid_scores = metrics.get("models", {}).get(name, {}).get("valid_scores", [])
+                
+                # Training loop
+                for epoch in range(start_epoch + 1, start_epoch + num_epochs + 1):
+                    epoch_train_scores = []
+                    epoch_valid_scores = []
+                    
+                    for fold, (train_idx, val_idx) in enumerate(cv.split(X_train_features, y_train)):
+                        # Split data
+                        X_train_fold = X_train_features[train_idx]
+                        X_val_fold = X_train_features[val_idx]
+                        y_train_fold = y_train[train_idx]
+                        y_val_fold = y_train[val_idx]
+
+                        # Calculate class weights
+                        sample_weights = compute_sample_weight("balanced", y_train_fold)
+                        
+                        # Partial fit for the model
+                        if name in ["rf", "svm"]:
+                            pipeline.fit(X_train_fold, y_train_fold, 
+                                      **{f"{name}__sample_weight": sample_weights})
+                        else:
+                            pipeline.fit(X_train_fold, y_train_fold)
+
+                        # Get scores
+                        train_score = f1_score(y_train_fold, 
+                                             pipeline.predict(X_train_fold), 
+                                             average="weighted")
+                        val_score = f1_score(y_val_fold, 
+                                           pipeline.predict(X_val_fold), 
+                                           average="weighted")
+                        
+                        epoch_train_scores.append(train_score)
+                        epoch_valid_scores.append(val_score)
+
+                    # Average scores for epoch
+                    avg_train = np.mean(epoch_train_scores)
+                    avg_valid = np.mean(epoch_valid_scores)
+                    train_scores.append(avg_train)
+                    valid_scores.append(avg_valid)
+
+                    self.logger.info(
+                        f"Epoch {epoch} - Train: {avg_train:.4f}, Val: {avg_valid:.4f}"
+                    )
+
+                    # Update model metrics
+                    metrics["models"][name].update({
+                        "train_scores": train_scores,
+                        "valid_scores": valid_scores,
+                        "last_epoch": epoch
+                    })
+
+                    # Save checkpoint
+                    if epoch % self.config.MODEL_SAVE_CONFIG["checkpoint_frequency"] == 0:
+                        self.save_checkpoint(model, metrics, epoch)
+
+            # Final save
+            self.save_checkpoint(model, metrics, start_epoch + num_epochs)
+            self.save_final_model(model, metrics)
+            
+            return model, metrics
+
+        except Exception as e:
+            self.logger.error(f"Continue training failed: {str(e)}")
+            return None, None
