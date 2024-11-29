@@ -164,20 +164,34 @@ class Config:
     }
 
     # Enhanced model training configuration
+    # MODEL_TRAINING_CONFIG = {
+    #     "cv_folds": 10,  # Increased from 5
+    #     "class_weight_method": "balanced",
+    #     "feature_selection_method": "mutual_info_classif",
+    #     "sampling_strategy": "smote",
+    #     "preprocessing": {
+    #         "min_df": 10,  # Increased from 5
+    #         "max_df": 0.85,  # Reduced from 0.9
+    #         "ngram_range": (1, 2),  # Reduced from (1,3) to prevent overfitting
+    #         "analyzer": ["word", "char_wb"],
+    #         "strip_accents": "unicode",
+    #         "binary": True,
+    #         "sublinear_tf": True,
+    #     },
+    # }
     MODEL_TRAINING_CONFIG = {
-        "cv_folds": 10,  # Increased from 5
+        "cv_folds": 10,
         "class_weight_method": "balanced",
-        "feature_selection_method": "mutual_info_classif",
-        "sampling_strategy": "smote",
         "preprocessing": {
-            "min_df": 10,  # Increased from 5
-            "max_df": 0.85,  # Reduced from 0.9
-            "ngram_range": (1, 2),  # Reduced from (1,3) to prevent overfitting
-            "analyzer": ["word", "char_wb"],
-            "strip_accents": "unicode",
-            "binary": True,
-            "sublinear_tf": True,
+            "min_df": 15,  # Increased to reduce noise
+            "max_df": 0.8,  # Reduced to remove very common words
+            "ngram_range": (1, 3),
+            "max_features": 15000  # Increased vocabulary size
         },
+        "ensemble": {
+            "voting": "soft",
+            "weights": [0.4, 0.3, 0.3]  # RF, SVM, NB weights
+        }
     }
 
     # Optimized parameter grid with better regularization
@@ -220,15 +234,32 @@ class Config:
     }
 
     # Enhanced regularization configuration
+    # REGULARIZATION_CONFIG = {
+    #     "rf_reg": {
+    #         "ccp_alpha": 0.005,  # Reduced from 0.01 for finer pruning
+    #         "max_samples": 0.7,  # Reduced from 0.8
+    #     },
+    #     "svm_reg": {
+    #         "kernel": "linear",
+    #         "shrinking": True
+    #     },
+    # }
     REGULARIZATION_CONFIG = {
         "rf_reg": {
-            "ccp_alpha": 0.005,  # Reduced from 0.01 for finer pruning
-            "max_samples": 0.7,  # Reduced from 0.8
+            "ccp_alpha": 0.002,  # Pruning strength 
+            "max_samples": 0.8,
+            "max_features": "sqrt",
+            "min_samples_leaf": 4
         },
         "svm_reg": {
-            "kernel": "linear",
-            "shrinking": True
+            "C": 0.8,  # Stronger regularization
+            "class_weight": "balanced",
+            "dual": False
         },
+        "nb_reg": {
+            "alpha": 1.2,
+            "fit_prior": True
+        }
     }
 
     # Add scoring configuration
