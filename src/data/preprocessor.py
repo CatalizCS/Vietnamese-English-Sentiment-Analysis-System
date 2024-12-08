@@ -1,4 +1,5 @@
 import pandas as pd
+import nltk
 from src.utils.logger import Logger
 from src.features.text_cleaner import TextCleaner
 
@@ -9,6 +10,7 @@ class DataPreprocessor:
         self.config = config
         self.logger = Logger(__name__).logger
         self.text_cleaner = TextCleaner(language, config)
+        nltk.download('punkt')  # Add this line to download the 'punkt' resource
 
     def preprocess(self, df: pd.DataFrame) -> pd.DataFrame:
         """Preprocess data with enhanced validation"""

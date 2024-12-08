@@ -61,6 +61,10 @@ class EnhancedModelTrainer:
         self.regularization_config = config.REGULARIZATION_CONFIG
         self.validation_config = config.VALIDATION_CONFIG
         self.scoring_config = config.SCORING_CONFIG
+        self.learning_rate = config.learning_rate
+        self.batch_size = config.batch_size
+        self.num_epochs = config.num_epochs
+        self.optimizer = config.optimizer
 
     def _convert_deque_to_list(self, obj):
         """Recursively convert deque objects to lists in the given object."""

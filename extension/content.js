@@ -68,6 +68,13 @@ if (!window.sentimentAnalyzer) {
             console.log('FacebookAnalyzer initialized');
             this.currentTheme = this.detectTheme();
             this.setupThemeObserver();
+
+            // Thêm queue và rate limiting config
+            this.analysisQueue = [];
+            this.isProcessingQueue = false;
+            this.BATCH_SIZE = 10; // Số lượng comments xử lý mỗi batch
+            this.RATE_LIMIT_MS = 1000; // Delay giữa các lần gọi API
+            this.lastAPICall = 0;
         }
 
         setupPort() {
@@ -483,7 +490,6 @@ if (!window.sentimentAnalyzer) {
         async analyzePost(post) {
             console.log('Analyzing post:', post);
 
-            // Ensure 'post' is a DOM Element
             if (!(post instanceof Element)) {
                 console.warn('Invalid post element');
                 return;
@@ -499,46 +505,57 @@ if (!window.sentimentAnalyzer) {
             this.pendingUpdates.add(postId);
 
             try {
-                // Disable the analyze button to prevent multiple clicks
                 const button = post.querySelector('.sentiment-analyze-btn');
                 if (button) {
                     button.disabled = true;
                     button.textContent = 'Đang phân tích...';
                 }
 
-                // Analyze post content
-                await this.analyzeFacebookPost(post);
-
-                // Load all comments
+                // 1. Trước tiên click nút "Xem thêm bình luận" và "Xem các trả lời"
                 await this.loadMoreComments(post);
 
-                // Find all comments in the post
-                const comments = this.findComments(post);
+                // 2. Chờ một chút để Facebook load các bình luận
+                await new Promise(resolve => setTimeout(resolve, 2000));
 
-                // Analyze each comment
-                for (const comment of comments) {
-                    await this.analyzeComment(comment);
+                // 3. Tìm tất cả bình luận bao gồm cả replies
+                const comments = document.querySelectorAll('[role="article"][tabindex="-1"]');
+                console.log(`Found ${comments.length} comments to analyze`);
+
+                // 4. Phân tích từng bình luận
+                let analyzed = 0;
+                let successful = 0;
+
+                const commentBatches = this.createBatches(Array.from(comments), this.BATCH_SIZE);
+
+                for (const batch of commentBatches) {
+                    await this.processBatchWithRateLimit(batch);
                 }
 
-                // Update stats
-                this.stats.analyzed += comments.length;
-                this.stats.successful += comments.length; // Assuming all analyses are successful
+                // 5. Cập nhật stats
+                this.stats.analyzed += analyzed;
+                this.stats.successful += successful;
 
-                // Notify background script to update stats
-                chrome.runtime.sendMessage({ type: 'UPDATE_STATS', stats: this.stats });
+                // 6. Gửi thông báo đến background script
+                chrome.runtime.sendMessage({
+                    type: 'UPDATE_STATS',
+                    stats: this.stats
+                });
 
-                // Re-enable the analyze button
                 if (button) {
                     button.disabled = false;
                     button.textContent = 'Phân tích lại';
                 }
 
+                return {
+                    success: true,
+                    analyzed,
+                    successful
+                };
+
             } catch (error) {
-                console.error('Error analyzing post and comments:', error);
+                console.error('Error analyzing post:', error);
                 this.showError('Có lỗi xảy ra khi phân tích bài viết này.');
 
-                // Re-enable the analyze button
-                const button = post.querySelector('.sentiment-analyze-btn');
                 if (button) {
                     button.disabled = false;
                     button.textContent = 'Phân tích lại';
@@ -618,6 +635,15 @@ if (!window.sentimentAnalyzer) {
                 return null;
             }
 
+            // Thêm cache key
+            const cacheKey = `sentiment_${text}`;
+
+            // Kiểm tra cache trước
+            const cachedResult = await this.getFromCache(cacheKey);
+            if (cachedResult) {
+                return cachedResult;
+            }
+
             try {
                 console.log('Sending request to:', `${this.API_URL}/predict`);
 
@@ -643,6 +669,10 @@ if (!window.sentimentAnalyzer) {
 
                 const result = await response.json();
                 console.log('API Result:', result);
+
+                // Lưu kết quả vào cache
+                await this.saveToCache(cacheKey, result);
+
                 return result;
             } catch (error) {
                 if (retryCount < this.MAX_RETRIES) {
@@ -1454,74 +1484,154 @@ if (!window.sentimentAnalyzer) {
         }
 
         findComments(postElement) {
-            const comments = new Set(); // Sử dụng Set để tránh trùng lặp
+            const comments = new Set();
             try {
-                // Tìm tất cả role="article" elements
-                const commentElements = postElement.querySelectorAll('[role="article"]');
-                
+                // Query all comment elements including replies
+                const commentElements = postElement.querySelectorAll('[role="article"][tabindex="-1"]');
+
                 commentElements.forEach(element => {
-                    // Skip nếu element này là main post
                     if (element === postElement) return;
 
-                    try {
-                        // Lấy text content
-                        const textElement = element.querySelector('div[dir="auto"][style*="text-align"]');
-                        const text = textElement?.textContent?.trim();
-
-                        // Lấy author name - thử các selector khác nhau
-                        const authorElement = (
-                            element.querySelector('a[role="link"] span.x193iq5w span') || 
-                            element.querySelector('a[href*="/user/"] span') ||
-                            element.querySelector('a[role="link"] span')
-                        );
-                        const author = authorElement?.textContent?.trim();
-
-                        // Lấy timestamp
-                        const timeElement = element.querySelector('a[href*="comment_id"]');
-                        const timestamp = timeElement?.textContent?.trim();
-
-                        // Kiểm tra xem comment có phải là reply không
-                        const isReply = this.isReplyComment(element);
-
-                        // Chỉ thêm vào nếu có đủ text và author
-                        if (text && author) {
-                            comments.add({
-                                element,
-                                text,
-                                userName: author,
-                                timestamp,
-                                isReply,
-                                // Thêm id để track
-                                id: element.getAttribute('data-commentid') || 
-                                    timeElement?.href?.match(/comment_id=(\d+)/)?.[1] ||
-                                    Date.now().toString()
-                            });
-                        }
-                    } catch (err) {
-                        console.warn('Error parsing comment:', err);
+                    // Extract comment data
+                    const commentData = this.extractCommentData(element);
+                    if (commentData) {
+                        comments.add(commentData);
                     }
                 });
 
-                const commentArray = Array.from(comments);
-                console.log(`Found ${commentArray.length} unique comments`);
-                return commentArray;
-
+                return Array.from(comments);
             } catch (error) {
                 console.error('Error finding comments:', error);
                 return Array.from(comments);
             }
         }
 
+        extractCommentData(element) {
+            try {
+                // Extract comment text
+                const textElement = element.querySelector('div[dir="auto"][style*="text-align"]');
+                const text = textElement?.textContent?.trim();
+
+                // Extract user info
+                const userLink = element.querySelector('a[role="link"][tabindex="0"]');
+                const userName = userLink?.querySelector('span.x193iq5w span')?.textContent?.trim();
+                const userProfile = userLink?.href;
+
+                // Extract timestamp 
+                const timeElement = element.querySelector('a[href*="comment_id"]');
+                const timestamp = timeElement?.textContent?.trim();
+                const commentId = timeElement?.href?.match(/comment_id=([0-9_]+)/)?.[1];
+
+                // Extract reaction counts
+                const reactionBarText = element.querySelector('[aria-label*="reaction"]')?.getAttribute('aria-label');
+                const reactions = this.parseReactionCounts(reactionBarText || '');
+
+                // Detect if this is a reply
+                const isReply = this.isReplyComment(element);
+                const parentCommentId = isReply ? this.findParentCommentId(element) : null;
+
+                // Check for top contributor badge
+                const hasTopContributorBadge = !!element.querySelector('div[role="link"]')?.textContent?.includes('Top contributor');
+
+                // Only return if we have valid text and username
+                if (text && userName) {
+                    return {
+                        element,
+                        id: commentId || `comment_${Date.now()}`,
+                        text,
+                        userName,
+                        userProfile,
+                        timestamp,
+                        reactions,
+                        isReply,
+                        parentCommentId,
+                        hasTopContributorBadge,
+                        language: this.detectLanguage(text)
+                    };
+                }
+            } catch (err) {
+                console.warn('Error extracting comment data:', err);
+            }
+            return null;
+        }
+
         isReplyComment(element) {
-            // Kiểm tra các pattern chỉ ra đây là reply
             return !!(
-                element.closest('div[aria-label*="Reply"]') ||
-                element.closest('div[aria-label*="Trả lời"]') ||
-                element.closest('div[aria-label*="Phản hồi"]') ||
-                element.querySelector('a[role="link"][href*="reply_comment_id"]') ||
-                element.closest('div[style*="margin-left"]') || // Replies thường được indent
+                element.closest('[aria-label*="Reply"], [aria-label*="Trả lời"]') ||
+                element.closest('div[class*="x1nn3v0j"]') ||
+                element.querySelector('a[href*="reply_comment_id"]') ||
+                element.closest('div[style*="margin-left"]') ||
                 element.closest('div[style*="padding-left"]')
             );
+        }
+
+        findParentCommentId(element) {
+            try {
+                // Try to find parent comment through DOM hierarchy
+                const parentContainer = element.closest('div[class*="x1nn3v0j"]')?.parentElement;
+                if (parentContainer) {
+                    const parentCommentLink = parentContainer.querySelector('a[href*="comment_id"]');
+                    return parentCommentLink?.href?.match(/comment_id=([0-9_]+)/)?.[1];
+                }
+
+                // Alternative: Check reply_comment_id in element's own link
+                const replyLink = element.querySelector('a[href*="reply_comment_id"]');
+                if (replyLink) {
+                    return replyLink.href.match(/reply_comment_id=([0-9_]+)/)?.[1];
+                }
+            } catch (err) {
+                console.warn('Error finding parent comment:', err);
+            }
+            return null;
+        }
+
+        detectLanguage(text) {
+            // Simple language detection based on comment content patterns
+            if (/[\u0041-\u005A\u0061-\u007A]/.test(text)) {
+                return text.match(/[ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĐĨŨƠàáâãèéêìíòóôõùúăđĩũơƯĂẠẢẤẦẨẪẬẮẰẲẴẶẸẺẼỀỀỂưăạảấầẩẫậắằẳẵặẹẻẽềềểỄỆỈỊỌỎỐỒỔỖỘỚỜỞỠỢỤỦỨỪễệỉịọỏốồổỗộớờởỡợụủứừỬỮỰỲỴÝỶỸửữựỳỵỷỹ]/)
+                    ? 'vi'
+                    : 'en';
+            }
+            return 'vi'; // Default to Vietnamese if no clear pattern
+        }
+
+        parseReactionCounts(text) {
+            const reactionCounts = {
+                total: 0,
+                types: {}
+            };
+
+            try {
+                const patterns = {
+                    like: /(\d+)\s*(like|thích)/i,
+                    love: /(\d+)\s*(love|yêu thích)/i,
+                    haha: /(\d+)\s*haha/i,
+                    wow: /(\d+)\s*wow/i,
+                    sad: /(\d+)\s*(sad|buồn)/i,
+                    angry: /(\d+)\s*(angry|phẫn nộ)/i
+                };
+
+                for (const [type, pattern] of Object.entries(patterns)) {
+                    const match = text.match(pattern);
+                    if (match) {
+                        const count = parseInt(match[1]);
+                        reactionCounts.types[type] = count;
+                        reactionCounts.total += count;
+                    }
+                }
+
+                // If we find a single total without types
+                if (reactionCounts.total === 0) {
+                    const totalMatch = text.match(/(\d+)/);
+                    if (totalMatch) {
+                        reactionCounts.total = parseInt(totalMatch[1]);
+                    }
+                }
+            } catch (err) {
+                console.warn('Error parsing reaction counts:', err);
+            }
+
+            return reactionCounts;
         }
 
         findPostContent(element) {
@@ -1545,6 +1655,158 @@ if (!window.sentimentAnalyzer) {
             }
 
             return null;
+        }
+
+        // Thêm các methods mới để xử lý batch và rate limiting
+        createBatches(items, batchSize) {
+            const batches = [];
+            for (let i = 0; i < items.length; i += batchSize) {
+                batches.push(items.slice(i, i + batchSize));
+            }
+            return batches;
+        }
+
+        async processBatchWithRateLimit(batch) {
+            for (const comment of batch) {
+                try {
+                    const textElement = comment.querySelector('div[dir="auto"][style*="text-align"]');
+                    const text = textElement?.textContent?.trim();
+
+                    if (!text) continue;
+
+                    // Thực hiện rate limiting
+                    const now = Date.now();
+                    const timeSinceLastCall = now - this.lastAPICall;
+                    if (timeSinceLastCall < this.RATE_LIMIT_MS) {
+                        await new Promise(resolve =>
+                            setTimeout(resolve, this.RATE_LIMIT_MS - timeSinceLastCall)
+                        );
+                    }
+
+                    const loadingIndicator = this.addLoadingIndicator(comment);
+                    try {
+                        const result = await this.analyzeSentiment(text);
+                        if (result) {
+                            this.displayResult(comment, result);
+                            this.stats.successful++;
+                        }
+                        this.stats.analyzed++;
+                    } finally {
+                        loadingIndicator.remove();
+                    }
+
+                    this.lastAPICall = Date.now();
+
+                } catch (err) {
+                    console.warn('Error analyzing comment:', err);
+                }
+            }
+        }
+
+        // Thêm methods để xử lý cache
+        async getFromCache(key) {
+            try {
+                const result = await chrome.storage.local.get(key);
+                return result[key];
+            } catch (error) {
+                console.warn('Cache read error:', error);
+                return null;
+            }
+        }
+
+        async saveToCache(key, value) {
+            try {
+                await chrome.storage.local.set({ [key]: value });
+            } catch (error) {
+                console.warn('Cache write error:', error);
+            }
+        }
+
+        async callSentimentAPI(text) {
+            const response = await fetch(`${this.API_URL}/predict`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                },
+                mode: 'cors',
+                cache: 'no-cache',
+                body: JSON.stringify({
+                    text: text,
+                    language: 'vi'
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            return await response.json();
+        }
+
+        extractComments(element) {
+            const comments = [];
+
+            try {
+                // Find all elements that match the comment criteria
+                const commentElements = element.querySelectorAll('[role="article"][tabindex="-1"]');
+                
+                for (const container of commentElements) {
+                    try {
+                        // Check for comment aria-label patterns in Vietnamese and English
+                        const ariaLabel = container.getAttribute('aria-label') || '';
+                        
+                        // Skip if not a comment element
+                        if (!this.isCommentElement(ariaLabel)) continue;
+
+                        const comment = {
+                            id: container.getAttribute('data-commentid') || 
+                                Date.now().toString(),
+                            text: this.extractCommentText(container),
+                            author: this.extractAuthorName(ariaLabel),
+                            time: this.extractTimestamp(container),
+                            isReply: this.isReplyComment(container)
+                        };
+
+                        if (comment.text && comment.author) {
+                            comments.push(comment);
+                        }
+                    } catch (err) {
+                        console.warn('Error extracting comment:', err);
+                    }
+                }
+            } catch (error) {
+                console.error('Error in extractComments:', error);
+            }
+
+            return comments;
+        }
+
+        isCommentElement(ariaLabel) {
+            // Comment patterns for both languages
+            const viPattern = /^(Bình luận|Phản hồi|Trả lời) bởi (.+)$/i;
+            const enPattern = /^Comment by (.+)$/i;
+            
+            return viPattern.test(ariaLabel) || enPattern.test(ariaLabel);
+        }
+
+        extractAuthorName(ariaLabel) {
+            // Extract name from aria-label
+            const viMatch = ariaLabel.match(/^(?:Bình luận|Phản hồi|Trả lời) bởi (.+)$/i);
+            const enMatch = ariaLabel.match(/^Comment by (.+)$/i);
+            
+            return (viMatch || enMatch)?.[1]?.trim() || null;
+        }
+
+        extractCommentText(element) {
+            // Look for content div with auto direction
+            const textElement = element.querySelector('div[dir="auto"][style*="text-align: start"]');
+            return textElement?.textContent?.trim() || null;
+        }
+
+        extractTimestamp(element) {
+            const timeLink = element.querySelector('a[href*="comment_id"]');
+            return timeLink?.textContent?.trim() || null;
         }
     }
 
@@ -1719,5 +1981,137 @@ if (!window.sentimentAnalyzer) {
             }
         }
     }
+
+    // Extract comments from Facebook page
+    function extractComments() {
+        const comments = [];
+
+        try {
+            // Sử dụng selector chính xác hơn để lấy tất cả bình luận
+            const commentElements = document.querySelectorAll('[role="article"][tabindex="-1"]');
+
+            commentElements.forEach(element => {
+                try {
+                    // Skip nếu là bài post gốc
+                    if (!element.closest('[aria-label*="Comment"], [aria-label*="Bình luận"]')) {
+                        return;
+                    }
+
+                    // Extract text từ div chính xác 
+                    const textElement = element.querySelector('[dir="auto"][style*="text-align: start"], [dir="auto"][style*="text-align"]');
+                    const text = textElement?.textContent?.trim();
+
+                    // Extract author từ link profile
+                    const authorElement = element.querySelector('a[role="link"] span[class*="x1xmvt09"] span, a[role="link"] span.x193iq5w span');
+                    const author = authorElement?.textContent?.trim();
+
+                    // Extract timestamp từ liên kết comment
+                    const timestampElement = element.querySelector('a[href*="comment_id"]');
+                    const timestamp = timestampElement?.textContent?.trim();
+
+                    // Extract comment ID từ href 
+                    const commentId = timestampElement?.href?.match(/comment_id=(\d+)/)?.[1];
+
+                    // Kiểm tra xem có phải là reply không
+                    const isReply = this.isNestedReplyComment(element);
+
+                    // Lấy parent comment ID nếu là reply
+                    const parentCommentId = isReply ? this.getParentCommentId(element) : '';
+
+                    // Lấy reaction count
+                    const reactionElement = element.querySelector('[aria-label*="reaction"], [class*="x1bd86ct"]');
+                    const reactionCount = reactionElement ? this.parseReactionCount(reactionElement) : 0;
+
+                    // Chỉ thêm comment có text và author
+                    if (text && author) {
+                        comments.push({
+                            id: commentId || Date.now().toString(),
+                            text,
+                            author,
+                            timestamp,
+                            isReply,
+                            parentCommentId,
+                            reactionCount,
+                            url: window.location.href,
+                            timestamp_ms: Date.now()
+                        });
+                    }
+
+                } catch (err) {
+                    console.error('Error parsing comment:', err);
+                }
+            });
+
+        } catch (error) {
+            console.error('Error extracting comments:', error);
+        }
+
+        console.log(`Found ${comments.length} comments`);
+        return comments;
+    }
+
+    // Thêm helper functions mới
+    function isNestedReplyComment(element) {
+        return !!(
+            element.closest('[aria-label*="Reply"], [aria-label*="Trả lời"]') ||
+            element.closest('[style*="margin-left"]') ||
+            element.closest('[style*="padding-left"]') ||
+            element.closest('[class*="x1nn3v0j"], [class*="x1mh8g0r"]')?.previousElementSibling ||
+            element.querySelector('a[href*="reply_comment_id"]')
+        );
+    }
+
+    function getParentCommentId(element) {
+        // Tìm parent comment dựa vào DOM structure
+        const parentComment = element.closest('[class*="x1nn3v0j"]')
+            ?.previousElementSibling
+            ?.querySelector('a[href*="comment_id"]');
+
+        return parentComment?.href.match(/comment_id=(\d+)/)?.[1] || '';
+    }
+
+    function parseReactionCount(element) {
+        const text = element.getAttribute('aria-label') || element.textContent;
+        const match = text.match(/\d+/);
+        return match ? parseInt(match[0]) : 0;
+    }
+
+    // Monitor DOM changes for new comments
+    function watchForNewComments() {
+        const observer = new MutationObserver(() => {
+            const comments = extractComments();
+            if (comments.length > 0) {
+                chrome.runtime.sendMessage({
+                    type: 'NEW_COMMENTS',
+                    comments: comments
+                });
+            }
+        });
+
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+    }
+
+    // Initialize comment extraction
+    function initCommentExtraction() {
+        // Extract initial comments
+        const comments = extractComments();
+        if (comments.length > 0) {
+            chrome.runtime.sendMessage({
+                type: 'INITIAL_COMMENTS',
+                comments: comments
+            });
+        }
+
+        // Watch for new comments
+        watchForNewComments();
+    }
+
+    // Add initialization 
+    document.addEventListener('DOMContentLoaded', () => {
+        initCommentExtraction();
+    });
 }
 

@@ -292,3 +292,9 @@ class Config:
             "description": "A model for analyzing English sentiment.",
         },
     }
+
+    def __init__(self):
+        self.learning_rate = 0.001  # Adjusted learning rate
+        self.batch_size = 32  # Adjusted batch size
+        self.num_epochs = 50  # Increased number of epochs
+        self.optimizer = 'adam'  # Optimizer choice
